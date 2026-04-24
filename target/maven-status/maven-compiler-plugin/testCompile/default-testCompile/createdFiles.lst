@@ -1,4 +1,0 @@
-com/transactionservice/service/TransactionServiceTest.class
-com/transactionservice/validator/TransactionValidatorTest.class
-com/transactionservice/JwtTestHelper.class
-com/transactionservice/controller/TransactionControllerIntegrationTest.class
