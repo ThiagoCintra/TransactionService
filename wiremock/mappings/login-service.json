@@ -1,0 +1,28 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/me",
+        "headers": {
+          "Authorization": {
+            "matches": "Bearer .+"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "sessionId": "mock-session-id",
+          "username": "mock-customer",
+          "contractService": true,
+          "symmetricKey": "mock-symmetric-key",
+          "role": "USER"
+        }
+      }
+    }
+  ]
+}
