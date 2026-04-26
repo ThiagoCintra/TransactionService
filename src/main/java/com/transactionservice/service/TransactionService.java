@@ -52,6 +52,14 @@ public class TransactionService {
     }
 
     public TransactionResponse processTransaction(TransactionRequest request) {
+        return processTransaction(request, null);
+    }
+
+    /**
+     * Process transaction and publish event to SQS.
+     * If idempotencyKey is provided it will be used as eventId.
+     */
+    public TransactionResponse processTransaction(TransactionRequest request, String idempotencyKey) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -72,10 +80,15 @@ public class TransactionService {
 
             SessionDTO session = fetchAndValidateSession(rawToken, customerId);
 
+            // idempotency: reuse provided header if present, otherwise generate UUID
+            String eventId = (idempotencyKey != null && !idempotencyKey.isBlank()) ? idempotencyKey : UUID.randomUUID().toString();
+
             TransactionEvent event = new TransactionEvent(
+                    eventId,
                     customerId,
-                    request.type(),
+                    request.type().name(),
                     request.amount(),
+                    channel,
                     Instant.now()
             );
 

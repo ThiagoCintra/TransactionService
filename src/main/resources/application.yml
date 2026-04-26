@@ -59,6 +59,17 @@ resilience4j:
         ignore-exceptions:
           - com.transactionservice.exception.BusinessException
           - com.transactionservice.exception.UnauthorizedException
+      sqsPublish:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - software.amazon.awssdk.core.exception.SdkClientException
+        ignore-exceptions:
+          - com.transactionservice.exception.BusinessException
 
 management:
   endpoints:

@@ -23,11 +23,12 @@ public class TransactionController {
 
     @PostMapping
     public ResponseEntity<TransactionResponse> createTransaction(
-            @Valid @RequestBody TransactionRequest request) {
+            @Valid @RequestBody TransactionRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
         log.info("Received POST /transactions request: type='{}', amount='{}'",
                 request.type(), request.amount());
 
-        TransactionResponse response = transactionService.processTransaction(request);
+        TransactionResponse response = transactionService.processTransaction(request, idempotencyKey);
 
         log.info("Transaction accepted: transactionId='{}'", response.transactionId());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
