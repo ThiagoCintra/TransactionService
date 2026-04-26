@@ -1,6 +1,6 @@
 package com.transactionservice.infrastructure.client;
 
-import com.transactionservice.dto.SessionDTO;
+import com.transactionservice.model.session.SessionDTO;
 import com.transactionservice.exception.LoginServiceUnavailableException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;

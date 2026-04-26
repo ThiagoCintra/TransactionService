@@ -1,6 +1,6 @@
 package com.transactionservice.controller;
 
-import com.transactionservice.dto.ErrorResponse;
+import com.transactionservice.model.response.ErrorResponse;
 import com.transactionservice.exception.BusinessException;
 import com.transactionservice.exception.LoginServiceUnavailableException;
 import com.transactionservice.exception.UnauthorizedException;

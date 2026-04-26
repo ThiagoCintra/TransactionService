@@ -1,15 +1,15 @@
 package com.transactionservice.service;
 
 import com.transactionservice.domain.TransactionType;
-import com.transactionservice.dto.SessionDTO;
-import com.transactionservice.dto.TransactionRequest;
-import com.transactionservice.dto.TransactionResponse;
+import com.transactionservice.model.session.SessionDTO;
+import com.transactionservice.model.request.TransactionRequest;
+import com.transactionservice.model.response.TransactionResponse;
 import com.transactionservice.exception.BusinessException;
 import com.transactionservice.exception.LoginServiceUnavailableException;
 import com.transactionservice.exception.UnauthorizedException;
-import com.transactionservice.infrastructure.client.LoginClient;
+import com.transactionservice.domains.LoginClientDomain;
 import com.transactionservice.infrastructure.security.JwtDetails;
-import com.transactionservice.infrastructure.sqs.SqsProducer;
+import com.transactionservice.domains.SqsProducerDomain;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,10 +34,10 @@ import static org.mockito.Mockito.*;
 class TransactionServiceTest {
 
     @Mock
-    private LoginClient loginClient;
+    private LoginClientDomain loginClient;
 
     @Mock
-    private SqsProducer sqsProducer;
+    private SqsProducerDomain sqsProducer;
 
     private TransactionValidator validator;
     private TransactionService transactionService;
@@ -45,7 +45,7 @@ class TransactionServiceTest {
     @BeforeEach
     void setUp() {
         validator = new TransactionValidator();
-        transactionService = new TransactionService(loginClient, sqsProducer, validator, new SimpleMeterRegistry());
+        transactionService = new TransactionServiceImpl(loginClient, sqsProducer, validator, new SimpleMeterRegistry());
         SecurityContextHolder.clearContext();
     }
 

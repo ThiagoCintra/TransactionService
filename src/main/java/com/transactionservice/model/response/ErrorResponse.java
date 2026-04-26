@@ -1,4 +1,4 @@
-package com.transactionservice.dto;
+package com.transactionservice.model.response;
 
 import java.time.Instant;
 import java.util.List;

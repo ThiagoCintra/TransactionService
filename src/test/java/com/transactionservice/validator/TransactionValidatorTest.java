@@ -1,7 +1,7 @@
 package com.transactionservice.validator;
 
 import com.transactionservice.domain.TransactionType;
-import com.transactionservice.dto.TransactionRequest;
+import com.transactionservice.model.request.TransactionRequest;
 import com.transactionservice.exception.BusinessException;
 import com.transactionservice.service.TransactionValidator;
 import org.junit.jupiter.api.BeforeEach;
