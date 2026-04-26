@@ -1,4 +1,4 @@
-package com.transactionservice.dto;
+package com.transactionservice.model.event;
 
 import java.math.BigDecimal;
 import java.time.Instant;

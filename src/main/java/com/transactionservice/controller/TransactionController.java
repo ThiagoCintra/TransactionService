@@ -1,7 +1,7 @@
 package com.transactionservice.controller;
 
-import com.transactionservice.dto.TransactionRequest;
-import com.transactionservice.dto.TransactionResponse;
+import com.transactionservice.model.request.TransactionRequest;
+import com.transactionservice.model.response.TransactionResponse;
 import com.transactionservice.service.TransactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

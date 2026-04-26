@@ -2,7 +2,7 @@ package com.transactionservice.infrastructure.sqs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.transactionservice.dto.TransactionEvent;
+import com.transactionservice.model.event.TransactionEvent;
 import com.transactionservice.exception.BusinessException;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;

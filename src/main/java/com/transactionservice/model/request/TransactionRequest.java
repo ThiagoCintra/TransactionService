@@ -1,4 +1,4 @@
-package com.transactionservice.dto;
+package com.transactionservice.model.request;
 
 import com.transactionservice.domain.TransactionType;
 import jakarta.validation.constraints.DecimalMin;

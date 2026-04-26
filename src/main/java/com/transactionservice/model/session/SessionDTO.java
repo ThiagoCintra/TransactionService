@@ -1,4 +1,4 @@
-package com.transactionservice.dto;
+package com.transactionservice.model.session;
 
 public record SessionDTO(
         String sessionId,
