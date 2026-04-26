@@ -6,7 +6,7 @@ import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.transactionservice.JwtTestHelper;
 import com.transactionservice.domain.TransactionType;
-import com.transactionservice.dto.TransactionRequest;
+import com.transactionservice.model.request.TransactionRequest;
 import com.transactionservice.infrastructure.sqs.SqsProducer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;

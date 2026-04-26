@@ -1,4 +1,4 @@
-package com.transactionservice.dto;
+package com.transactionservice.model.response;
 
 import com.transactionservice.domain.TransactionType;
 

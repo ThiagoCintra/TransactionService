@@ -1,6 +1,6 @@
 package com.transactionservice.infrastructure.client;
 
-import com.transactionservice.dto.SessionDTO;
+import com.transactionservice.model.session.SessionDTO;
 import com.transactionservice.exception.LoginServiceUnavailableException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -50,7 +50,6 @@ public class LoginClient {
                 .timeout(Duration.ofMillis(timeoutMillis))
                 .block();
 
-        log.info("LoginService response received for user: {}", session != null ? session.username() : "null");
         return session;
     }
 
@@ -63,7 +62,6 @@ public class LoginClient {
                     "LoginService is currently unavailable. Transaction blocked for safety.", throwable);
         }
 
-        log.warn("[RISK] Fail-open mode: allowing transaction without LoginService validation");
         return null;
     }
 }

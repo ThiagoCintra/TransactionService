@@ -1,13 +1,15 @@
-package com.transactionservice.dto;
-
-import com.transactionservice.domain.TransactionType;
+package com.transactionservice.model.event;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
+
 public record TransactionEvent(
+        String eventId,
         String customerId,
-        TransactionType type,
+        String type,
         BigDecimal amount,
+        String channel,
         Instant timestamp
-) {}
+) {
+}

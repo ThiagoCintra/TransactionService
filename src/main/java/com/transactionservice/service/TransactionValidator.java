@@ -1,6 +1,6 @@
 package com.transactionservice.service;
 
-import com.transactionservice.dto.TransactionRequest;
+import com.transactionservice.model.request.TransactionRequest;
 import com.transactionservice.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
