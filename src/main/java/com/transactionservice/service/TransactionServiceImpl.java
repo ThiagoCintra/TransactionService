@@ -64,7 +64,6 @@ public class TransactionServiceImpl implements TransactionService {
         }
 
         String customerId = (String) authentication.getPrincipal();
-        // JwtDetails is infrastructure-level; stored as authentication details by security layer
         var jwtDetails = (com.transactionservice.infrastructure.security.JwtDetails) authentication.getDetails();
         String rawToken = jwtDetails.rawToken();
         String channel = jwtDetails.channel();

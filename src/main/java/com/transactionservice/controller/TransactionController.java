@@ -19,18 +19,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class TransactionController {
 
-    private final TransactionService transactionService;
+	private final TransactionService transactionService;
 
-    @PostMapping
-    public ResponseEntity<TransactionResponse> createTransaction(
-            @Valid @RequestBody TransactionRequest request,
-            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
-        log.info("Received POST /transactions request: type='{}', amount='{}'",
-                request.type(), request.amount());
+	@PostMapping
+	public ResponseEntity<TransactionResponse> createTransaction(@Valid @RequestBody TransactionRequest request,
+			@org.springframework.web.bind.annotation.RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
+		log.info("Received POST /transactions request: type='{}', amount='{}'", request.type(), request.amount());
 
-        TransactionResponse response = transactionService.processTransaction(request, idempotencyKey);
+		TransactionResponse response = transactionService.processTransaction(request, idempotencyKey);
 
-        log.info("Transaction accepted: transactionId='{}'", response.transactionId());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
-    }
+		log.info("Transaction accepted: transactionId='{}'", response.transactionId());
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+	}
 }

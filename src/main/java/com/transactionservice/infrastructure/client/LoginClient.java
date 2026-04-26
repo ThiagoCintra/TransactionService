@@ -50,7 +50,6 @@ public class LoginClient {
                 .timeout(Duration.ofMillis(timeoutMillis))
                 .block();
 
-        log.info("LoginService response received for user: {}", session != null ? session.username() : "null");
         return session;
     }
 
@@ -63,7 +62,6 @@ public class LoginClient {
                     "LoginService is currently unavailable. Transaction blocked for safety.", throwable);
         }
 
-        log.warn("[RISK] Fail-open mode: allowing transaction without LoginService validation");
         return null;
     }
 }
