@@ -18,6 +18,7 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - LOGIN_SERVICE_FAIL_FAST=true
+      - WAIT_HOSTS=login-service-mock:8080,localstack:4566
     depends_on:
       localstack:
         condition: service_healthy
