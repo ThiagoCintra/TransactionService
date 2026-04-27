@@ -6,13 +6,15 @@ server:
   port: 8080
 
 jwt:
-  secret: ${JWT_SECRET:bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA=}
+  secret: ${JWT_SECRET}
 
 login-service:
   base-url: ${LOGIN_SERVICE_URL:http://localhost:8081}
   timeout-millis: ${LOGIN_SERVICE_TIMEOUT_MILLIS:2000}
 
 aws:
+  endpoint: ${AWS_ENDPOINT:http://localstack:4566}
+  region: ${AWS_REGION:us-east-1}
   sqs:
     queue-url: ${SQS_QUEUE_URL:http://localhost:4566/000000000000/transactions}
     region: ${AWS_REGION:us-east-1}
