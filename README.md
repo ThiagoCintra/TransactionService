@@ -1,14 +1,85 @@
-# TransactionService
+# Itau Microservices Platform — TransactionService
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Java-17-blue?style=for-the-badge&logo=java" />
-  <img src="https://img.shields.io/badge/Spring%20Boot-3.4.1-brightgreen?style=for-the-badge&logo=springboot" />
+  <img src="https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=java" />
+  <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=for-the-badge&logo=springboot" />
   <img src="https://img.shields.io/badge/AWS%20SQS-FF9900?style=for-the-badge&logo=amazonaws" />
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
   <img src="https://img.shields.io/badge/Resilience4j-6DB33F?style=for-the-badge" />
 </p>
 
-Microsserviço de **processamento de transações financeiras**, desenvolvido em Java 17 com Spring Boot 3. Recebe requisições autenticadas via JWT, valida o cliente junto ao **LoginService**, e publica os eventos de transação em uma fila **AWS SQS**.
+## 📋 Visão Geral da Plataforma
+
+**Nome:** Itau Microservices Platform  
+**Propósito:** Plataforma de processamento de transações gamificadas, onde usuários realizam operações financeiras que são consumidas por um sistema de jogos.
+
+**Problema que resolve:**
+- Processamento seguro de transações financeiras
+- Autenticação centralizada via JWT
+- Processamento assíncrono via SQS
+- Gamificação para engajamento do usuário
+
+**Principais Funcionalidades:**
+- ✅ Autenticação e autorização com JWT
+- ✅ CRUD de transações financeiras
+- ✅ Processamento assíncrono via filas SQS
+- ✅ Sistema de gamificação (níveis, missões)
+- ✅ Rate limiting por IP
+- ✅ Circuit breaker para resiliência
+
+**Tecnologias:**
+- Java 21, Spring Boot 3.3.5, Spring Security, Spring Data JPA
+- Redis (sessões, rate limiting), MongoDB (gamificação), H2 (testes)
+- AWS SQS (LocalStack), Docker, Maven, JWT, Resilience4j
+
+---
+
+## 🏗️ Arquitetura da Plataforma
+
+```mermaid
+flowchart TB
+    Client[Cliente / Postman]
+
+    subgraph Docker_Network["Docker Network"]
+        subgraph Login_Service["Login Service :8081"]
+            LS[login-service\nAuth JWT]
+            RD_LS[Redis\nSessões]
+            LS --- RD_LS
+        end
+
+        subgraph Transaction_Service["Transaction Service :8080"]
+            TS[transaction-service\nProcessa Transações]
+        end
+
+        subgraph Game_Service["Game Service :8082"]
+            GS[game-service\nGamificação]
+            MDB[(MongoDB)]
+            GS --- MDB
+        end
+
+        subgraph Infra["Infraestrutura"]
+            RD[Redis :6379\nCache / Sessões]
+            LCL[LocalStack :4566\nSQS Queue]
+        end
+    end
+
+    Client --> LS
+    Client --> TS
+    TS --> LS
+    LS --> RD
+    TS --> RD
+    TS --> LCL
+    GS --> LCL
+    GS --> MDB
+
+    style LS fill:#4CAF50,stroke:#333,stroke-width:2px
+    style TS fill:#2196F3,stroke:#333,stroke-width:2px
+    style GS fill:#FF9800,stroke:#333,stroke-width:2px
+```
+
+---
+
+Microsserviço de **processamento de transações financeiras**, desenvolvido em Java 21 com Spring Boot 3.3.5. Recebe requisições autenticadas via JWT, valida o cliente junto ao **LoginService**, e publica os eventos de transação em uma fila **AWS SQS**.
 
 ---
 
@@ -68,8 +139,8 @@ Microsserviço de **processamento de transações financeiras**, desenvolvido em
 
 | Tecnologia | Versão | Uso |
 |---|---|---|
-| Java | 17 | Linguagem principal |
-| Spring Boot | 3.4.1 | Framework base |
+| Java | 21 | Linguagem principal |
+| Spring Boot | 3.3.5 | Framework base |
 | Spring Security | 6.x | Autenticação JWT stateless |
 | Spring WebFlux (WebClient) | 6.x | Chamadas HTTP reativas ao LoginService |
 | JJWT | 0.12.6 | Parsing e validação de JWT |
@@ -258,7 +329,7 @@ Inclui estado do CircuitBreaker do LoginService.
 ### Pré-requisitos
 
 - [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/)
-- [Java 17+](https://adoptium.net/) *(apenas para execução local sem Docker)*
+- [Java 21+](https://adoptium.net/) *(apenas para execução local sem Docker)*
 - [Maven 3.9+](https://maven.apache.org/) *(apenas para execução local sem Docker)*
 
 ### 1. Subir com Docker Compose (recomendado)
