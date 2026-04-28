@@ -35,7 +35,7 @@ public class LoginClient {
         log.info("Calling LoginService /me endpoint");
 
         SessionDTO session = webClient.get()
-                .uri("/me")
+                .uri("/api/v1/auth/me")
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, response -> {

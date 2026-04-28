@@ -9,14 +9,14 @@ jwt:
   secret: ${JWT_SECRET}
 
 login-service:
-  base-url: ${LOGIN_SERVICE_URL:http://localhost:8081}
+  base-url: ${LOGIN_SERVICE_URL:http://login-service:8081}
   timeout-millis: ${LOGIN_SERVICE_TIMEOUT_MILLIS:2000}
 
 aws:
   endpoint: ${AWS_ENDPOINT:http://localstack:4566}
   region: ${AWS_REGION:us-east-1}
   sqs:
-    queue-url: ${SQS_QUEUE_URL:http://localhost:4566/000000000000/transactions}
+    queue-url: ${SQS_QUEUE_URL}
     region: ${AWS_REGION:us-east-1}
     endpoint: ${AWS_ENDPOINT:http://localhost:4566}
   access-key-id: ${AWS_ACCESS_KEY_ID:test}

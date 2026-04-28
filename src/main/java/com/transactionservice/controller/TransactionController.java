@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,7 +24,7 @@ public class TransactionController {
 
 	@PostMapping
 	public ResponseEntity<TransactionResponse> createTransaction(@Valid @RequestBody TransactionRequest request,
-			@org.springframework.web.bind.annotation.RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
+			@RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey) {
 		log.info("Received POST /transactions request: type='{}', amount='{}'", request.type(), request.amount());
 
 		TransactionResponse response = transactionService.processTransaction(request, idempotencyKey);
