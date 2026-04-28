@@ -127,9 +127,9 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Session validated: username='{}', contractService='{}'",
                 session.username(), session.contractService());
 
-        if (Boolean.FALSE.equals(session.contractService())) {
-            throw new BusinessException("Cliente não possui serviço contratado");
-        }
+//        if (Boolean.FALSE.equals(session.contractService())) {
+//            throw new BusinessException("Cliente não possui serviço contratado");
+//        }
 
         return session;
     }
