@@ -2,7 +2,7 @@ package com.transactionservice.infrastructure.sqs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.transactionservice.model.event.TransactionEvent;
+import com.transactionservice.financeiro.event.FinanceiroBaseEvent;
 import com.transactionservice.exception.BusinessException;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
@@ -17,8 +17,6 @@ import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
-import java.time.Duration;
-import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -36,66 +34,51 @@ public class SqsProducer {
     @Value("${aws.sqs.fifo:false}")
     private boolean fifoQueue;
 
-    
-
     // Use Resilience4j retry (configured in application.yml) to retry transient failures
     @Retry(name = "sqsPublish")
-    public void publish(TransactionEvent event) {
+    public void publish(FinanceiroBaseEvent event) {
         Timer.Sample sample = Timer.start(meterRegistry);
-        Counter counter = meterRegistry.counter("transactions.sent.to.sqs");
+        Counter counter = meterRegistry.counter("financeiro.eventos.enviados.sqs");
+
+        String eventType = event.getClass().getSimpleName();
 
         try {
             String messageBody = objectMapper.writeValueAsString(event);
 
-            // structured JSON log for event publish intent
-            Map<String, Object> logMap = new HashMap<>();
-            logMap.put("eventId", event.eventId());
-            logMap.put("customerId", event.customerId());
-            logMap.put("type", event.type());
-            logMap.put("amount", event.amount());
-            logMap.put("status", "SENT_TO_SQS");
-            try {
-                log.info(objectMapper.writeValueAsString(logMap));
-            } catch (JsonProcessingException ignore) {
-                log.info("SENT_TO_SQS eventId='{}' customerId='{}' type='{}' amount='{}'",
-                        event.eventId(), event.customerId(), event.type(), event.amount());
-            }
+            log.info("Publicando evento no SQS: eventType='{}', eventId='{}', escolaId='{}'",
+                    eventType, event.eventId(), event.escolaId());
 
             SendMessageRequest.Builder builder = SendMessageRequest.builder()
                     .queueUrl(queueUrl)
                     .messageBody(messageBody)
                     .messageAttributes(Map.of(
-                            "channel", MessageAttributeValue.builder().dataType("String").stringValue(event.channel()).build(),
-                            "type", MessageAttributeValue.builder().dataType("String").stringValue(event.type()).build()
+                            "eventType", MessageAttributeValue.builder()
+                                    .dataType("String").stringValue(eventType).build(),
+                            "escolaId", MessageAttributeValue.builder()
+                                    .dataType("Number").stringValue(String.valueOf(event.escolaId())).build()
                     ));
 
-            // If FIFO queue, include group id and deduplication id
             if (fifoQueue || queueUrl.toLowerCase().endsWith(".fifo")) {
-                String groupId = event.customerId();
-                builder.messageGroupId(groupId);
+                builder.messageGroupId(String.valueOf(event.escolaId()));
                 builder.messageDeduplicationId(event.eventId());
             } else {
-                // use deduplication id when provided (helps idempotency if broker supports it)
                 builder.messageDeduplicationId(event.eventId());
             }
 
-            SendMessageRequest request = builder.build();
-
-            SendMessageResponse response = sqsClient.sendMessage(request);
+            SendMessageResponse response = sqsClient.sendMessage(builder.build());
 
             counter.increment();
             sample.stop(meterRegistry.timer("sqs.publish.duration"));
 
-            log.info("SQS message published successfully. MessageId='{}', customerId='{}'",
-                    response.messageId(), event.customerId());
+            log.info("Evento publicado com sucesso no SQS: messageId='{}', eventType='{}', escolaId='{}'",
+                    response.messageId(), eventType, event.escolaId());
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize TransactionEvent for customerId='{}': {}",
-                    event.customerId(), e.getMessage(), e);
-            throw new BusinessException("Failed to serialize transaction event");
+            log.error("Falha ao serializar evento '{}': {}", eventType, e.getMessage(), e);
+            throw new BusinessException("Falha ao serializar evento financeiro");
         } catch (Exception e) {
-            log.error("Failed to publish event to SQS for customerId='{}', eventId='{}': {}",
-                    event.customerId(), event.eventId(), e.getMessage(), e);
-            throw new BusinessException("Failed to publish transaction event to SQS: " + e.getMessage());
+            log.error("Falha ao publicar evento '{}' no SQS (eventId='{}'): {}",
+                    eventType, event.eventId(), e.getMessage(), e);
+            throw new BusinessException("Falha ao publicar evento financeiro no SQS: " + e.getMessage());
         }
     }
 }

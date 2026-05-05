@@ -1,12 +1,12 @@
 package com.transactionservice.domains;
 
-import com.transactionservice.model.event.TransactionEvent;
+import com.transactionservice.financeiro.event.FinanceiroBaseEvent;
 
 /**
- * Domain interface for publishing transaction events to a message broker.
+ * Domain interface for publishing financial events to a message broker.
  */
 public interface SqsProducerDomain {
 
-    void publish(TransactionEvent event);
+    void publish(FinanceiroBaseEvent event);
 
 }

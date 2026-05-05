@@ -1,4 +1,4 @@
-# 💳 transaction-service
+# 💰 financeiro-service (transaction-service)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-blue?style=for-the-badge&logo=openjdk&logoColor=white" />
@@ -7,29 +7,27 @@
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
   <img src="https://img.shields.io/badge/Resilience4j-6DB33F?style=for-the-badge&logo=java&logoColor=white" />
   <img src="https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white" />
-  <img src="https://img.shields.io/badge/WireMock-3.3.1-8C4FFF?style=for-the-badge" />
   <img src="https://img.shields.io/badge/LocalStack-3.0-1D8348?style=for-the-badge" />
 </p>
 
-Microsserviço de **processamento de transações financeiras**, desenvolvido em **Java 21** com **Spring Boot 3.3.5**. Recebe requisições autenticadas via JWT, valida a sessão do cliente junto ao **LoginService**, e publica eventos de transação em uma fila **AWS SQS** (emulada localmente com LocalStack).
+Microsserviço de **domínio financeiro (cobranças de alunos)**, desenvolvido em **Java 21** com **Spring Boot 3.3.5**. Responsável pela geração, controle de status e publicação de eventos de cobranças mensais no ecossistema de gestão escolar.
 
 ---
 
 ## 📑 Sumário
 
 1. [Visão Geral do Projeto](#1-visão-geral-do-projeto)
-2. [Arquitetura do Sistema](#2-arquitetura-do-sistema)
-3. [Diagramas UML](#3-diagramas-uml)
-4. [Serviços e Comunicação](#4-serviços-e-comunicação)
-5. [Modelo de Dados](#5-modelo-de-dados)
-6. [Segurança e Autenticação](#6-segurança-e-autenticação)
-7. [Como Subir o Projeto (Docker)](#7-como-subir-o-projeto-docker)
-8. [Testando as APIs](#8-testando-as-apis)
-9. [Estrutura de Pastas](#9-estrutura-de-pastas)
-10. [Variáveis de Ambiente](#10-variáveis-de-ambiente)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Próximos Passos e Melhorias](#12-próximos-passos-e-melhorias)
-13. [Módulo Financeiro](#13-módulo-financeiro)
+2. [Arquitetura do Ecossistema](#2-arquitetura-do-ecossistema)
+3. [Modelo de Dados](#3-modelo-de-dados)
+4. [Endpoints REST](#4-endpoints-rest)
+5. [Segurança e Multi-tenancy](#5-segurança-e-multi-tenancy)
+6. [Eventos SQS](#6-eventos-sqs)
+7. [Integração com pagamentos-service](#7-integração-com-pagamentos-service)
+8. [Como Subir o Projeto (Docker)](#8-como-subir-o-projeto-docker)
+9. [Exemplos de Request/Response](#9-exemplos-de-requestresponse)
+10. [Estrutura de Pastas](#10-estrutura-de-pastas)
+11. [Variáveis de Ambiente](#11-variáveis-de-ambiente)
+12. [Observabilidade](#12-observabilidade)
 
 ---
 
@@ -42,1156 +40,503 @@ Microsserviço de **processamento de transações financeiras**, desenvolvido em
 | **artifactId** | `transaction-service` |
 | **groupId** | `com.transactionservice` |
 | **version** | `1.0.0` |
-| **descrição** | TransactionService – Financial Transaction Processing Microservice |
+| **responsabilidade** | Domínio financeiro — cobranças mensais de alunos |
 
-O serviço resolve o problema de **receber e validar transações financeiras de forma segura e resiliente**, garantindo que:
+Este serviço é responsável por:
 
-- Apenas clientes autenticados via JWT com canal `MOBILE` possam criar transações.
-- A sessão ativa do cliente seja verificada no **LoginService** antes de qualquer processamento.
-- Cada transação aceita seja publicada como evento na fila **AWS SQS** para processamento assíncrono downstream.
-- O sistema se mantenha estável mesmo quando o LoginService fica temporariamente indisponível (Circuit Breaker + Retry).
+- **Gerar cobranças mensais** para alunos (mensalidade + alimentação + multa + juros)
+- **Calcular totais** exclusivamente no backend (nunca confiar no cliente)
+- **Controlar status** de cobranças: `PENDENTE`, `PAGO`, `ATRASADO`
+- **Publicar eventos SQS** para integração com `pagamentos-service`
+- **Garantir multi-tenancy** via `escolaId` extraído do JWT
+- **Validar acesso por roles**: `ADMIN` tem acesso total; `RESPONSAVEL` só acessa seus alunos vinculados
+
+### Posição no Ecossistema
+
+| Serviço | Responsabilidade |
+|---|---|
+| `login-service` | Autenticação e emissão de JWT |
+| `alunos-service` | Domínio de alunos e matrículas |
+| **`transaction-service`** | **Domínio financeiro — cobranças** |
+| `pagamentos-service` | Processamento de pagamentos |
 
 ### Principais funcionalidades
 
-| Funcionalidade | Endpoint / Classe | Descrição |
+| Funcionalidade | Endpoint | Descrição |
 |---|---|---|
-| Criar transação | `POST /transactions` | Recebe e valida a transação, publica no SQS |
-| Validação JWT | `JwtAuthenticationFilter` | Extrai `customerId`, `channel` e `roles` do token |
-| Verificação de sessão | `LoginClient → GET /api/v1/auth/me` | Confirma sessão ativa no LoginService |
-| Publicação SQS | `SqsProducer` | Envia `TransactionEvent` para a fila `transactions` |
-| Circuit Breaker | Resilience4j `loginService` | Isola falhas do LoginService |
-| Retry com backoff | Resilience4j `sqsPublish` | Retenta publicações SQS transientes |
-| Observabilidade | `/actuator/prometheus` | Métricas de negócio e performance |
-| Health Check | `/actuator/health` | Estado do serviço e Circuit Breakers |
-
-### Tecnologias utilizadas
-
-| Tecnologia | Versão exata | Uso |
-|---|---|---|
-| Java | **21** | Linguagem principal |
-| Spring Boot | **3.3.5** | Framework base |
-| Spring Security | via Spring Boot 3.3.5 | Autenticação JWT stateless |
-| Spring WebFlux (WebClient) | via Spring Boot 3.3.5 | Chamadas HTTP reativas ao LoginService |
-| Spring Validation | via Spring Boot 3.3.5 | Validação de `@Valid` no request body |
-| Spring Actuator | via Spring Boot 3.3.5 | Health, metrics, prometheus |
-| JJWT (jjwt-api/impl/jackson) | **0.12.6** | Parsing e validação de JWT |
-| Resilience4j Spring Boot 3 | **2.2.0** | CircuitBreaker e Retry |
-| AWS SDK v2 – SQS | **2.29.50** | Publicação de eventos na fila SQS |
-| Micrometer + Prometheus | via Spring Boot 3.3.5 | Métricas exportáveis para Prometheus |
-| Logstash Logback Encoder | **8.0** | Logs estruturados em JSON |
-| Lombok | **1.18.46** | Redução de boilerplate |
-| WireMock | **3.3.1** | Mock do LoginService em testes e Docker |
-| LocalStack | **3.0** | Emulação local do AWS SQS |
-| Docker / Docker Compose | 3.8 | Containerização e ambiente local |
+| Consultar cobranças por aluno | `GET /api/v1/financeiro/{alunoId}` | Lista cobranças com filtro opcional por mês |
+| Consultar por query params | `GET /api/v1/financeiro?alunoId=&mes=` | Mesma consulta via parâmetros de query |
+| Gerar cobrança mensal | `POST /api/v1/financeiro/gerar-mensal` | Cria cobrança com total calculado no backend |
+| Registrar pagamento (interno) | `PATCH /api/v1/financeiro/{id}/interno/pagamento` | Atualiza status — uso do `pagamentos-service` |
 
 ---
 
-## 2. Arquitetura do Sistema
-
-### Diagrama de arquitetura
+## 2. Arquitetura do Ecossistema
 
 ```mermaid
 flowchart TD
-    CLIENT["📱 Cliente MOBILE\n(app ou curl)"]
+    CLIENT["📱 App / Responsável"]
+    ADMIN["🖥️ Painel Admin"]
 
-    subgraph DOCKER ["Docker Network: transaction-network"]
-        subgraph TS ["transaction-service :8080"]
-            FILTER["JwtAuthenticationFilter\n(extrai sub / channel / roles)"]
-            CTRL["TransactionController\nPOST /transactions"]
-            SVC["TransactionServiceImpl\n(orquestra o fluxo)"]
-            VALIDATOR["TransactionValidator\n(tipo + valor)"]
-            LC["LoginClient\n@CircuitBreaker + @Retry"]
-            SQS_PROD["SqsProducer\n@Retry"]
+    subgraph ECOSYSTEM ["Ecossistema de Serviços"]
+        LOGIN["login-service :8081\nJWT (escola_id, roles, alunos_ids)"]
+        ALUNOS["alunos-service :8082\nDomínio de alunos"]
+
+        subgraph FS ["transaction-service :8080"]
+            FILTER["JwtAuthenticationFilter"]
+            CTRL["AlunoFinanceiroController"]
+            SVC["AlunoFinanceiroServiceImpl\n(cálculo de total no backend)"]
+            REPO["AlunoFinanceiroRepository\n(in-memory → JPA-ready)"]
+            SQS_PROD["SqsProducer"]
         end
 
-        subgraph LS ["login-service-mock :8081→8080"]
-            WM["WireMock 3.3.1\nGET /me → SessionDTO"]
-        end
-
-        subgraph LSK ["localstack :4566"]
-            SQSQ["AWS SQS (emulado)\nfila: transactions"]
-        end
+        PAGAMENTOS["pagamentos-service\nConsome eventos SQS\nChama PATCH /interno/pagamento"]
+        SQS["AWS SQS\nCobrancaGeradaEvent\nPagamentoConfirmadoEvent\nCobrancaAtrasadaEvent"]
     end
 
-    CLIENT -->|"POST /transactions\nAuthorization: Bearer JWT"| FILTER
+    CLIENT -->|"Bearer JWT"| FILTER
+    ADMIN -->|"Bearer JWT (ADMIN)"| FILTER
     FILTER --> CTRL
     CTRL --> SVC
-    SVC --> VALIDATOR
-    SVC -->|"GET /api/v1/auth/me\nAuthorization: Bearer JWT"| LC
-    LC -->|HTTP| WM
-    WM -->|SessionDTO JSON| LC
+    SVC --> REPO
     SVC --> SQS_PROD
-    SQS_PROD -->|"SendMessage\nTransactionEvent JSON"| SQSQ
-    SVC -->|"HTTP 202 ACCEPTED\nTransactionResponse"| CLIENT
+    SQS_PROD --> SQS
+    SQS --> PAGAMENTOS
+    PAGAMENTOS -->|"PATCH /interno/pagamento"| CTRL
+    LOGIN -.->|"emite JWT com escola_id, roles, alunos_ids"| CLIENT
 ```
 
-### Descrição de cada componente
+### Arquitetura Hexagonal
 
-| Componente | Container | Porta | Responsabilidade |
-|---|---|---|---|
-| `transaction-service` | `transaction-service` | `8080` | Núcleo do sistema: recebe, valida e encaminha transações |
-| `login-service-mock` | `login-service-mock` | `8081` (ext) / `8080` (int) | Stub WireMock que simula o LoginService real |
-| `localstack` | `localstack` | `4566` | Emula AWS SQS localmente |
+O projeto segue arquitetura hexagonal (ports & adapters):
 
-### Padrões de arquitetura identificados
-
-- **Arquitetura Hexagonal (Ports & Adapters)**: interfaces de domínio (`LoginClientDomain`, `SqsProducerDomain`) desacoplam o serviço das implementações de infraestrutura.
-- **Stateless JWT Authentication**: sem sessão HTTP – todo estado de autenticação está no token.
-- **Event-Driven**: transações aceitas viram eventos SQS para processamento assíncrono.
-- **Circuit Breaker + Retry**: Resilience4j protege contra indisponibilidade do LoginService.
-- **Feature Flag**: `LOGIN_SERVICE_FAIL_FAST` controla comportamento quando LoginService cai.
-- **Idempotência via header**: `X-Idempotency-Key` opcional para deduplicação de eventos SQS.
-- **Observabilidade**: métricas Micrometer/Prometheus + logs estruturados JSON (Logstash).
-
----
-
-## 3. Diagramas UML
-
-### 3.1 Diagrama de classes das principais entidades
-
-```mermaid
-classDiagram
-    class TransactionRequest {
-        +TransactionType type
-        +BigDecimal amount
-    }
-
-    class TransactionResponse {
-        +String transactionId
-        +String customerId
-        +TransactionType type
-        +BigDecimal amount
-        +String status
-        +Instant timestamp
-    }
-
-    class TransactionEvent {
-        +String eventId
-        +String customerId
-        +String type
-        +BigDecimal amount
-        +String channel
-        +Instant timestamp
-    }
-
-    class SessionDTO {
-        +String sessionId
-        +String username
-        +Boolean contractService
-        +String symmetricKey
-        +String role
-    }
-
-    class ErrorResponse {
-        +int status
-        +String error
-        +String message
-        +Instant timestamp
-        +List~String~ details
-    }
-
-    class JwtDetails {
-        +String channel
-        +String rawToken
-    }
-
-    class TransactionType {
-        <<enumeration>>
-        PIX
-        PAGAMENTO
-        RECEBIMENTO
-        CARTAO
-        INVESTIMENTO
-    }
-
-    TransactionRequest --> TransactionType
-    TransactionResponse --> TransactionType
-    TransactionRequest ..> TransactionResponse : processada para
-    TransactionRequest ..> TransactionEvent : origina
 ```
-
-### 3.2 Diagrama de sequência – fluxo completo de uma transação
-
-```mermaid
-sequenceDiagram
-    actor Client as 📱 Cliente MOBILE
-    participant Filter as JwtAuthenticationFilter
-    participant Ctrl as TransactionController
-    participant Svc as TransactionServiceImpl
-    participant Val as TransactionValidator
-    participant LC as LoginClient
-    participant LS as LoginService (WireMock)
-    participant SQS as SqsProducer
-    participant Queue as SQS transactions
-
-    Client->>Filter: POST /transactions\nAuthorization: Bearer <jwt>
-    Filter->>Filter: validateToken(jwt)\nextract: sub, channel, roles
-    Filter->>Ctrl: request autenticado\nSecurityContext populado
-    Ctrl->>Svc: processTransaction(request, idempotencyKey)
-    Svc->>Svc: getAuthentication()\ncustomerId = sub\nchannel = "MOBILE"\nrawToken = jwt
-    Svc->>Val: validate(request)
-    Val->>Val: validateType() + validateAmount()\n[0.01 .. 1.000.000,00]
-    Val-->>Svc: OK
-    Svc->>Svc: validateChannel("MOBILE")
-    Svc->>LC: getSession(rawToken)
-    Note over LC: @CircuitBreaker(loginService)\n@Retry(loginService)
-    LC->>LS: GET /api/v1/auth/me\nAuthorization: Bearer <jwt>
-    LS-->>LC: 200 SessionDTO\n{sessionId, username, contractService, role}
-    LC-->>Svc: SessionDTO
-    Svc->>Svc: build TransactionEvent\neventId = idempotencyKey ?? UUID\nchannel, type, amount, timestamp
-    Svc->>SQS: publish(event)
-    Note over SQS: @Retry(sqsPublish)
-    SQS->>Queue: SendMessage\nmessageBody = JSON(event)\nmessageAttributes: channel, type
-    Queue-->>SQS: MessageId
-    SQS-->>Svc: OK
-    Svc-->>Ctrl: TransactionResponse\n{transactionId, customerId, type, amount, "ACCEPTED", timestamp}
-    Ctrl-->>Client: HTTP 202 Accepted
-```
-
-### 3.3 Diagrama de componentes – camadas e filtros
-
-```mermaid
-flowchart LR
-    subgraph HTTP["Camada HTTP"]
-        FLT["JwtAuthenticationFilter\n(OncePerRequestFilter)"]
-        CTRL["TransactionController\n@RestController"]
-        EXH["GlobalExceptionHandler\n@RestControllerAdvice"]
-    end
-
-    subgraph SERVICE["Camada de Serviço"]
-        SVC_IF["TransactionService\n(interface)"]
-        SVC_IMPL["TransactionServiceImpl\n@Service"]
-        VAL["TransactionValidator\n@Component"]
-    end
-
-    subgraph DOMAIN["Domínio (Ports)"]
-        LCD["LoginClientDomain\n(interface)"]
-        SQSD["SqsProducerDomain\n(interface)"]
-    end
-
-    subgraph ADAPTERS["Adapters"]
-        LCA["LoginClientAdapter\n@Component"]
-        SQSA["SqsProducerAdapter\n@Component"]
-    end
-
-    subgraph INFRA["Infraestrutura"]
-        LC["LoginClient\n@CircuitBreaker @Retry"]
-        SQSP["SqsProducer\n@Retry"]
-        JWT["JwtTokenProvider\n@Component"]
-        SEC["SecurityConfig\n@Configuration"]
-    end
-
-    subgraph CONFIG["Configuração"]
-        WCC["WebClientConfig\n→ loginServiceWebClient"]
-        SQSC["SqsConfig\n→ SqsClient"]
-        JKSC["JacksonConfig\n→ ObjectMapper"]
-    end
-
-    FLT --> JWT
-    FLT --> CTRL
-    CTRL --> SVC_IF
-    SVC_IMPL -.->|implements| SVC_IF
-    SVC_IMPL --> VAL
-    SVC_IMPL --> LCD
-    SVC_IMPL --> SQSD
-    LCD -.->|implements| LCA
-    SQSD -.->|implements| SQSA
-    LCA --> LC
-    SQSA --> SQSP
-    LC --> WCC
-    SQSP --> SQSC
-    SEC --> FLT
+domain  ports (interfaces)   adapters (implementações)
+  ↓           ↓                       ↓
+financeiro/  domains/             adapters/
+entity/      SqsProducerDomain    SqsProducerAdapter
+event/       LoginClientDomain    LoginClientAdapter
+service/                         infrastructure/sqs/SqsProducer
+                                 infrastructure/client/LoginClient
 ```
 
 ---
 
-## 4. Serviços e Comunicação
+## 3. Modelo de Dados
 
-### transaction-service (porta 8080)
+### `AlunoFinanceiroEntity`
 
-| Método | URL | Auth | Descrição |
-|---|---|---|---|
-| `POST` | `/transactions` | `Bearer JWT` (MOBILE) | Processa uma transação financeira |
-| `GET` | `/actuator/health` | Público | Health check do serviço e Circuit Breakers |
-| `GET` | `/actuator/info` | Público | Informações da aplicação |
-| `GET` | `/actuator/prometheus` | Público | Métricas no formato Prometheus |
-| `GET` | `/actuator/metrics` | Público | Métricas gerais |
-| `GET` | `/actuator/circuitbreakers` | Público | Estado dos Circuit Breakers |
-| `GET` | `/actuator/retries` | Público | Estado dos Retry instances |
-
-### login-service-mock (porta 8081 → interna 8080)
-
-| Método | URL | Auth | Resposta |
-|---|---|---|---|
-| `GET` | `/me` | `Bearer .+` (qualquer JWT) | `SessionDTO` com `contractService: true` |
-
-> **Nota:** O `LoginClient` chama `GET /api/v1/auth/me` no base-url configurado. O mock WireMock em Docker está mapeado em `/me` — ajuste conforme o LoginService real.
-
-### localstack (porta 4566)
-
-| Serviço AWS | Recurso | URL |
+| Campo | Tipo | Descrição |
 |---|---|---|
-| SQS | fila `transactions` | `http://localstack:4566/000000000000/transactions` |
+| `id` | `Long` | Identificador único (auto-increment) |
+| `alunoId` | `Long` | ID do aluno (referência externa ao alunos-service) |
+| `escolaId` | `Long` | ID da escola — impõe multi-tenancy |
+| `mesReferencia` | `String` | Mês no formato `YYYY-MM` |
+| `mensalidade` | `BigDecimal` | Valor da mensalidade |
+| `alimentacao` | `BigDecimal` | Valor de alimentação |
+| `multa` | `BigDecimal` | Multa por atraso (default 0) |
+| `juros` | `BigDecimal` | Juros por atraso (default 0) |
+| `total` | `BigDecimal` | **Calculado no backend**: mensalidade + alimentacao + multa + juros |
+| `status` | `StatusFinanceiro` | `PENDENTE`, `PAGO` ou `ATRASADO` |
+| `dataGeracao` | `LocalDateTime` | Data de criação da cobrança |
+| `dataAtualizacao` | `LocalDateTime` | Data da última atualização |
 
-### Fluxo de dados entre serviços
+> ⚠️ **Regra de segurança crítica**: `total` e `escolaId` **nunca** são aceitos no request body. O `total` é sempre calculado pelo backend; o `escolaId` é sempre extraído do JWT.
+
+### `StatusFinanceiro`
 
 ```
-Cliente MOBILE
-    │
-    │ POST /transactions  +  Authorization: Bearer JWT
-    ▼
-transaction-service (:8080)
-    │
-    ├─── GET /api/v1/auth/me ──────────────────────► login-service (:8081)
-    │         Authorization: Bearer JWT                     │
-    │◄────────────── SessionDTO ──────────────────────────◄─┘
-    │
-    └─── SendMessage (JSON) ──────────────────────► SQS fila transactions (:4566)
+PENDENTE → aguardando pagamento
+PAGO     → pagamento confirmado
+ATRASADO → vencido sem pagamento
 ```
-
-**Protocolo de comunicação com LoginService:** HTTP/1.1 síncrono via WebClient (Netty), com timeout de 2000ms, Circuit Breaker e Retry.
-
-**Protocolo com SQS:** AWS SDK v2 síncrono (`sqsClient.sendMessage()`), com Retry em caso de falha transitória.
 
 ---
 
-## 5. Modelo de Dados
+## 4. Endpoints REST
 
-O `transaction-service` **não possui banco de dados**. Toda a persistência é delegada para downstream via SQS. As estruturas de dados são Java records (imutáveis).
+### `GET /api/v1/financeiro/{alunoId}?mes=YYYY-MM`
 
-### TransactionRequest (entrada da API)
+Consulta cobranças de um aluno. O parâmetro `mes` é opcional.
 
+- **Roles permitidas**: `ADMIN` (todos os alunos), `RESPONSAVEL` (apenas alunos vinculados no JWT)
+- **Multi-tenancy**: filtra automaticamente pelo `escolaId` do JWT
+
+**Response 200:**
+```json
+[
+  {
+    "id": 1,
+    "alunoId": 42,
+    "escolaId": 10,
+    "mesReferencia": "2025-05",
+    "mensalidade": 500.00,
+    "alimentacao": 100.00,
+    "multa": 0.00,
+    "juros": 0.00,
+    "total": 600.00,
+    "status": "PENDENTE",
+    "dataGeracao": "2025-05-01T10:00:00",
+    "dataAtualizacao": "2025-05-01T10:00:00"
+  }
+]
+```
+
+---
+
+### `GET /api/v1/financeiro?alunoId=42&mes=2025-05`
+
+Mesma consulta via query parameters. Comportamento idêntico ao endpoint acima.
+
+---
+
+### `POST /api/v1/financeiro/gerar-mensal`
+
+Gera uma nova cobrança mensal. **Restrito a `ADMIN`.**
+
+**Request body:**
 ```json
 {
-  "type": "PIX",
-  "amount": 500.00
+  "alunoId": 42,
+  "mesReferencia": "2025-05",
+  "mensalidade": 500.00,
+  "alimentacao": 100.00,
+  "multa": 10.00,
+  "juros": 5.00
 }
 ```
 
-| Campo | Tipo Java | Validação |
+> `multa` e `juros` são opcionais (default `0`).  
+> `total` e `escolaId` **não são aceitos** — calculados/extraídos pelo backend.
+
+**Response 201:**
+```json
+{
+  "id": 1,
+  "alunoId": 42,
+  "escolaId": 10,
+  "mesReferencia": "2025-05",
+  "mensalidade": 500.00,
+  "alimentacao": 100.00,
+  "multa": 10.00,
+  "juros": 5.00,
+  "total": 615.00,
+  "status": "PENDENTE",
+  "dataGeracao": "2025-05-01T10:00:00",
+  "dataAtualizacao": "2025-05-01T10:00:00"
+}
+```
+
+Após a criação, o evento `CobrancaGeradaEvent` é publicado no SQS.
+
+---
+
+### `PATCH /api/v1/financeiro/{id}/interno/pagamento`
+
+Atualiza o status de uma cobrança. **Restrito a `ADMIN`.**  
+Endpoint consumido pelo `pagamentos-service` para confirmar ou marcar atrasos.
+
+**Request body:**
+```json
+{
+  "status": "PAGO"
+}
+```
+
+Valores aceitos: `PENDENTE`, `PAGO`, `ATRASADO`.
+
+**Response 200:** mesmo formato do response da consulta.
+
+Após atualização:
+- Status `PAGO` → publica `PagamentoConfirmadoEvent`
+- Status `ATRASADO` → publica `CobrancaAtrasadaEvent`
+
+---
+
+## 5. Segurança e Multi-tenancy
+
+### JWT Claims utilizados
+
+| Claim | Tipo | Uso |
 |---|---|---|
-| `type` | `TransactionType` (enum) | `@NotNull` |
-| `amount` | `BigDecimal` | `@NotNull`, `@DecimalMin("0.01")` |
+| `sub` | `String` | Identificador do usuário autenticado |
+| `roles` | `List<String>` | `ADMIN` ou `RESPONSAVEL` |
+| `escola_id` | `Long` | Impõe multi-tenancy (nunca aceito no request) |
+| `alunos_ids` | `List<Long>` | IDs dos alunos vinculados ao responsável |
 
-Validação adicional em `TransactionValidator`: `amount` ≤ `1000000.00`
-
-### TransactionType (enum)
+### Regras de Acesso
 
 ```
-PIX | PAGAMENTO | RECEBIMENTO | CARTAO | INVESTIMENTO
+ADMIN     → acesso total a todos os alunos da escola (filtrado por escolaId do JWT)
+RESPONSAVEL → acesso restrito aos alunos listados em alunos_ids no JWT
 ```
 
-### TransactionResponse (saída da API – HTTP 202)
+### Validação `validarAcessoAluno`
 
-```json
-{
-  "transactionId": "550e8400-e29b-41d4-a716-446655440000",
-  "customerId": "customer-123",
-  "type": "PIX",
-  "amount": 500.00,
-  "status": "ACCEPTED",
-  "timestamp": "2025-04-28T05:12:45.923Z"
-}
-```
+Implementada em `AlunoFinanceiroAccessControl`:
 
-### TransactionEvent (mensagem publicada no SQS)
+1. Se `roles` contém `ADMIN` → permite acesso.
+2. Se `RESPONSAVEL` → verifica se `alunoId` está em `alunos_ids` do JWT.
+3. Caso contrário → lança `AccessDeniedException` (HTTP 403).
 
-```json
-{
-  "eventId": "550e8400-e29b-41d4-a716-446655440000",
-  "customerId": "customer-123",
-  "type": "PIX",
-  "amount": 500.00,
-  "channel": "MOBILE",
-  "timestamp": "2025-04-28T05:12:45.923Z"
-}
-```
+### Multi-tenancy
 
-Mensagem SQS também inclui `messageAttributes`:
-- `channel` (String): ex. `"MOBILE"`
-- `type` (String): ex. `"PIX"`
-
-> **Idempotência:** Se o header `X-Idempotency-Key` for informado, ele é usado como `eventId` (e como `messageDeduplicationId` em filas FIFO).
-
-### SessionDTO (resposta do LoginService)
-
-```json
-{
-  "sessionId": "mock-session-id",
-  "username": "mock-customer",
-  "contractService": true,
-  "symmetricKey": "mock-symmetric-key",
-  "role": "USER"
-}
-```
-
-### ErrorResponse (corpo de erros)
-
-```json
-{
-  "status": 422,
-  "error": "Business Rule Violation",
-  "message": "Channel 'WEB' is not allowed. Only MOBILE transactions are accepted.",
-  "timestamp": "2025-04-28T05:12:45.923Z",
-  "details": []
-}
-```
+- `escolaId` é **sempre** extraído do JWT via claim `escola_id`.
+- **Nunca** é aceito no request body ou como parâmetro de URL.
+- Todas as queries ao repositório incluem `escolaId` como filtro obrigatório.
 
 ---
 
-## 6. Segurança e Autenticação
+## 6. Eventos SQS
 
-### Fluxo JWT completo
+O serviço publica eventos no AWS SQS para integração assíncrona.
 
-```
-1. LoginService (externo) gera o JWT com as claims:
-   - sub     : customerId (ex: "customer-123")
-   - channel : canal de origem (ex: "MOBILE")
-   - roles   : lista de perfis (ex: ["USER"])
-   - iat     : issued at (unix timestamp)
-   - exp     : expiração
+### `CobrancaGeradaEvent`
 
-2. Cliente inclui o token no header:
-   Authorization: Bearer <jwt>
+Publicado quando uma nova cobrança é gerada via `POST /gerar-mensal`.
 
-3. JwtAuthenticationFilter intercepta TODA requisição:
-   a) Extrai o token do header Authorization (remove "Bearer ")
-   b) Chama JwtTokenProvider.validateToken(token)
-      - Faz parse do JWT com a SecretKey (HMAC-SHA)
-      - Verifica se não está expirado
-   c) Se válido:
-      - getSubject(token)  → customerId (principal)
-      - getChannel(token)  → claim "channel"
-      - getRoles(token)    → claim "roles" (list)
-      - Cria UsernamePasswordAuthenticationToken com authorities ROLE_USER
-      - Armazena JwtDetails(channel, rawToken) em authentication.details
-      - Popula SecurityContextHolder
-
-4. TransactionServiceImpl lê o SecurityContext:
-   - customerId = authentication.getPrincipal()
-   - channel    = jwtDetails.channel()
-   - rawToken   = jwtDetails.rawToken()
-
-5. Validação de canal:
-   - Apenas channel == "MOBILE" (case-insensitive) é aceito
-   - Qualquer outro canal → BusinessException (HTTP 422)
-
-6. O rawToken é encaminhado ao LoginClient para verificar sessão ativa
+```json
+{
+  "eventId": "uuid",
+  "escolaId": 10,
+  "alunoId": 42,
+  "cobrancaId": 1,
+  "mesReferencia": "2025-05",
+  "total": 615.00,
+  "timestamp": "2025-05-01T10:00:00Z"
+}
 ```
 
-### Configuração do JWT
+### `PagamentoConfirmadoEvent`
 
-| Parâmetro | Valor |
-|---|---|
-| Algoritmo de assinatura | HMAC-SHA (escolhido automaticamente pelo JJWT com base no tamanho da chave) |
-| Secret (env) | `JWT_SECRET=bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA=` |
-| Encoding do secret | String UTF-8 direta (`secret.getBytes(StandardCharsets.UTF_8)`) |
-| Expiração | Verificada pela claim `exp` |
+Publicado quando uma cobrança é marcada como `PAGO`.
 
-### Filtros de segurança
+```json
+{
+  "eventId": "uuid",
+  "escolaId": 10,
+  "alunoId": 42,
+  "cobrancaId": 1,
+  "mesReferencia": "2025-05",
+  "timestamp": "2025-05-10T14:30:00Z"
+}
+```
 
-| Filtro / Configuração | Classe | Comportamento |
-|---|---|---|
-| `JwtAuthenticationFilter` | `OncePerRequestFilter` | Intercepta toda requisição, extrai e valida JWT |
-| `SecurityConfig` | `@EnableWebSecurity` | CSRF desabilitado (API stateless); sessão `STATELESS` |
-| Regras de acesso | `SecurityFilterChain` | `/actuator/health`, `/actuator/info`, `/actuator/prometheus` → público; todo o resto → autenticado |
+### `CobrancaAtrasadaEvent`
 
-### Circuit Breaker (LoginService)
+Publicado quando uma cobrança é marcada como `ATRASADO`.
 
-| Parâmetro | Valor |
-|---|---|
-| Janela deslizante | 10 chamadas |
-| Mínimo de chamadas para avaliar | 5 |
-| Threshold de falhas | 50% |
-| Tempo em estado OPEN | 30 segundos |
-| Chamadas permitidas em HALF-OPEN | 3 |
-| Transição automática OPEN → HALF-OPEN | habilitada |
-| Exceções que contam como falha | `IOException`, `TimeoutException`, `WebClientRequestException`, `LoginServiceUnavailableException` |
+```json
+{
+  "eventId": "uuid",
+  "escolaId": 10,
+  "alunoId": 42,
+  "cobrancaId": 1,
+  "mesReferencia": "2025-05",
+  "total": 615.00,
+  "timestamp": "2025-06-01T09:00:00Z"
+}
+```
 
-### Retry (LoginService)
-
-| Parâmetro | Valor |
-|---|---|
-| Máximo de tentativas | 3 |
-| Espera inicial | 500ms |
-| Backoff exponencial | 2× |
-| Exceções retentáveis | `IOException`, `TimeoutException`, `WebClientRequestException` |
-| Exceções ignoradas (não retenta) | `BusinessException`, `UnauthorizedException` |
-
-### Retry (SQS)
-
-| Parâmetro | Valor |
-|---|---|
-| Máximo de tentativas | 3 |
-| Espera inicial | 500ms |
-| Backoff exponencial | 2× |
-| Exceções retentáveis | `IOException`, `TimeoutException`, `SdkClientException` |
-| Exceções ignoradas | `BusinessException` |
-
-### Fail-Fast vs Fail-Open
-
-Controlado pela variável `LOGIN_SERVICE_FAIL_FAST`:
-
-| Modo | Comportamento |
-|---|---|
-| `true` (padrão) | Se o LoginService cair (fallback), a transação é **bloqueada** → `LoginServiceUnavailableException` → HTTP 503 |
-| `false` | Se o LoginService cair, a transação é **permitida** sem validação de sessão (Fail-Open) |
+Todos os eventos implementam `FinanceiroBaseEvent` e incluem os atributos de mensagem SQS `eventType` e `escolaId`.
 
 ---
 
-## 7. Como Subir o Projeto (Docker)
+## 7. Integração com pagamentos-service
+
+O `pagamentos-service` se integra com este serviço de duas formas:
+
+1. **Consumindo eventos SQS**: escuta `CobrancaGeradaEvent` para iniciar o fluxo de pagamento.
+2. **Chamando o endpoint interno** após confirmação de pagamento:
+
+```
+PATCH /api/v1/financeiro/{id}/interno/pagamento
+Authorization: Bearer <jwt-admin>
+Content-Type: application/json
+
+{ "status": "PAGO" }
+```
+
+Esse endpoint requer um JWT com role `ADMIN` — o `pagamentos-service` deve autenticar via `login-service` e obter um token administrativo.
+
+---
+
+## 8. Como Subir o Projeto (Docker)
 
 ### Pré-requisitos
 
-- [Docker Engine](https://docs.docker.com/engine/install/) ≥ 20.x
-- [Docker Compose](https://docs.docker.com/compose/install/) ≥ 2.x (plugin ou standalone)
-- Porta `8080`, `8081` e `4566` livres na máquina
+- Docker e Docker Compose instalados
+- Variáveis de ambiente configuradas (ver seção 11)
 
-### Serviços provisionados pelo docker-compose.yml
-
-| Serviço | Imagem | Porta | Dependências |
-|---|---|---|---|
-| `transaction-service` | build local (Dockerfile) | `8080` | `localstack` (healthy), `login-service-mock` (started) |
-| `localstack` | `localstack/localstack:3.0` | `4566` | — |
-| `login-service-mock` | `wiremock/wiremock:3.3.1` | `8081` | — |
-
-### Passo a passo
-
-**1. Clone e entre na pasta do projeto**
+### Subir o ambiente completo
 
 ```bash
-git clone https://github.com/ThiagoCintra/TransactionService.git
-cd TransactionService
+docker-compose up -d
 ```
 
-**2. Suba o ambiente completo**
+Isso inicia:
+- `transaction-service` na porta `8080`
+- `localstack` (emulação AWS SQS) na porta `4566`
+- `wiremock` (mock do login-service) na porta `8081`
+
+### Criar a fila SQS no LocalStack
 
 ```bash
-docker compose up --build
+./scripts/setup-localstack.sh
 ```
 
-> O LocalStack inicializa automaticamente a fila SQS via `scripts/localstack-init.sh`:
-> ```bash
-> awslocal sqs create-queue --queue-name transactions --region us-east-1
-> ```
-
-**3. Aguarde o health check**
-
-O `transaction-service` ficará `healthy` após o endpoint `/actuator/health` retornar 200. Isso pode levar até 60 segundos na primeira vez (build Maven incluído).
-
-```bash
-# Acompanhar os logs de todos os serviços
-docker compose logs -f
-
-# Verificar status dos containers
-docker compose ps
-```
-
-**4. Confirmar que tudo está rodando**
+### Verificar saúde
 
 ```bash
 curl http://localhost:8080/actuator/health
-# Esperado: {"status":"UP",...}
-
-curl http://localhost:4566/_localstack/health
-# Esperado: {"services":{"sqs":"available"},...}
-```
-
-### Comandos úteis
-
-```bash
-# Subir somente LocalStack e WireMock (dev local sem Docker para o serviço)
-docker compose up localstack login-service-mock
-
-# Reiniciar somente o transaction-service após mudanças
-docker compose up --build transaction-service
-
-# Ver logs do transaction-service em tempo real
-docker compose logs -f transaction-service
-
-# Parar todos os containers
-docker compose down
-
-# Parar e remover volumes
-docker compose down -v
-
-# Executar comando dentro do container localstack
-docker compose exec localstack bash
-
-# Listar mensagens na fila SQS (dentro do localstack)
-docker compose exec localstack awslocal sqs receive-message \
-  --queue-url http://localhost:4566/000000000000/transactions \
-  --region us-east-1
-
-# Recriar a fila SQS manualmente (se necessário)
-docker compose exec localstack awslocal sqs create-queue \
-  --queue-name transactions \
-  --region us-east-1
-```
-
-### Build e teste sem Docker
-
-```bash
-# Build (pula testes)
-mvn clean package -DskipTests
-
-# Executar os testes
-mvn test -Dspring.profiles.active=test
-
-# Rodar a aplicação localmente (LocalStack e WireMock devem estar up)
-java -jar target/transaction-service-1.0.0.jar \
-  --JWT_SECRET=bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA= \
-  --LOGIN_SERVICE_URL=http://localhost:8081 \
-  --SQS_QUEUE_URL=http://localhost:4566/000000000000/transactions \
-  --AWS_ENDPOINT=http://localhost:4566
 ```
 
 ---
 
-## 8. Testando as APIs
+## 9. Exemplos de Request/Response
 
-### Gerar um JWT de teste
-
-O `JwtTokenProvider` valida o token usando os **bytes UTF-8** do segredo. Use o script Python abaixo para gerar um token compatível:
-
-```python
-# pip install PyJWT
-import jwt
-import time
-
-secret = "bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA="
-
-payload = {
-    "sub": "customer-123",
-    "channel": "MOBILE",
-    "roles": ["USER"],
-    "iat": int(time.time()),
-    "exp": int(time.time()) + 3600
-}
-
-# A chave deve ser os bytes UTF-8 do secret (não Base64-decoded)
-token = jwt.encode(payload, secret.encode("utf-8"), algorithm="HS512")
-print(token)
-```
-
-> **Atenção:** Para testes de integração (`mvn test`), use a classe `JwtTestHelper.generateMobileToken("customer-123")` que já está corretamente configurada para o perfil de teste.
-
----
-
-### Endpoint: `POST /transactions`
-
-**Requisição – PIX de R$ 500,00**
+### Gerar cobrança mensal (ADMIN)
 
 ```bash
-TOKEN="<cole_o_jwt_gerado_acima>"
-
-curl -X POST http://localhost:8080/transactions \
+curl -X POST http://localhost:8080/api/v1/financeiro/gerar-mensal \
+  -H "Authorization: Bearer $JWT_ADMIN" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "type": "PIX",
-    "amount": 500.00
+    "alunoId": 42,
+    "mesReferencia": "2025-05",
+    "mensalidade": 500.00,
+    "alimentacao": 100.00
   }'
 ```
 
-**Resposta esperada – HTTP 202 Accepted**
-
-```json
-{
-  "transactionId": "550e8400-e29b-41d4-a716-446655440000",
-  "customerId": "customer-123",
-  "type": "PIX",
-  "amount": 500.00,
-  "status": "ACCEPTED",
-  "timestamp": "2025-04-28T05:12:45.923Z"
-}
-```
-
----
-
-**Requisição com Idempotency Key**
+### Consultar cobranças (ADMIN ou RESPONSAVEL)
 
 ```bash
-curl -X POST http://localhost:8080/transactions \
+# Por path variable
+curl http://localhost:8080/api/v1/financeiro/42?mes=2025-05 \
+  -H "Authorization: Bearer $JWT_TOKEN"
+
+# Por query param
+curl "http://localhost:8080/api/v1/financeiro?alunoId=42&mes=2025-05" \
+  -H "Authorization: Bearer $JWT_TOKEN"
+```
+
+### Registrar pagamento (uso interno pelo pagamentos-service)
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/financeiro/1/interno/pagamento \
+  -H "Authorization: Bearer $JWT_ADMIN" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Idempotency-Key: 7f3a9b1c-2d4e-5f6a-7b8c-9d0e1f2a3b4c" \
-  -d '{
-    "type": "PAGAMENTO",
-    "amount": 150.50
-  }'
+  -d '{ "status": "PAGO" }'
 ```
 
----
+### Respostas de erro
 
-**Todos os tipos de transação válidos**
-
-```bash
-for TYPE in PIX PAGAMENTO RECEBIMENTO CARTAO INVESTIMENTO; do
-  echo "--- $TYPE ---"
-  curl -s -X POST http://localhost:8080/transactions \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $TOKEN" \
-    -d "{\"type\": \"$TYPE\", \"amount\": 100.00}" | python3 -m json.tool
-done
-```
-
----
-
-### Respostas de erro documentadas
-
-**HTTP 401 – Sem token**
-
-```bash
-curl -X POST http://localhost:8080/transactions \
-  -H "Content-Type: application/json" \
-  -d '{"type": "PIX", "amount": 100.00}'
-```
-
-```
-HTTP/1.1 401 Unauthorized
-```
-
----
-
-**HTTP 400 – Valor inválido (negativo)**
-
-```bash
-curl -X POST http://localhost:8080/transactions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"type": "PIX", "amount": -100.00}'
-```
-
-```json
-{
-  "status": 400,
-  "error": "Validation Error",
-  "message": "Request validation failed",
-  "timestamp": "2025-04-28T05:12:45.923Z",
-  "details": ["Amount must be greater than zero"]
-}
-```
-
----
-
-**HTTP 422 – Canal não é MOBILE**
-
-```json
-{
-  "status": 422,
-  "error": "Business Rule Violation",
-  "message": "Channel 'WEB' is not allowed. Only MOBILE transactions are accepted.",
-  "timestamp": "2025-04-28T05:12:45.923Z",
-  "details": []
-}
-```
-
----
-
-**HTTP 422 – Valor acima do máximo (R$ 1.000.000,00)**
-
-```bash
-curl -X POST http://localhost:8080/transactions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"type": "INVESTIMENTO", "amount": 2000000.00}'
-```
-
-```json
-{
-  "status": 422,
-  "error": "Business Rule Violation",
-  "message": "Transaction amount exceeds maximum allowed value of 1000000.00",
-  "timestamp": "2025-04-28T05:12:45.923Z",
-  "details": []
-}
-```
-
----
-
-**HTTP 503 – LoginService indisponível**
-
-```json
-{
-  "status": 503,
-  "error": "Service Unavailable",
-  "message": "Authentication service is temporarily unavailable. Please try again later.",
-  "timestamp": "2025-04-28T05:12:45.923Z",
-  "details": []
-}
-```
-
----
-
-### Endpoints do Actuator
-
-```bash
-# Health com estado do Circuit Breaker
-curl http://localhost:8080/actuator/health
-
-# Métricas Prometheus (scraping)
-curl http://localhost:8080/actuator/prometheus | grep "transactions"
-
-# Estado dos Circuit Breakers
-curl http://localhost:8080/actuator/circuitbreakers
-
-# Métrica específica
-curl http://localhost:8080/actuator/metrics/transactions.total
-curl http://localhost:8080/actuator/metrics/login.service.request.duration
-```
-
----
-
-### Configuração Postman
-
-Importe a coleção abaixo no Postman (salve como `TransactionService.postman_collection.json`):
-
-```json
-{
-  "info": {
-    "name": "transaction-service",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "variable": [
-    { "key": "base_url", "value": "http://localhost:8080" },
-    { "key": "token", "value": "" }
-  ],
-  "item": [
-    {
-      "name": "POST /transactions - PIX",
-      "request": {
-        "method": "POST",
-        "url": "{{base_url}}/transactions",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Authorization", "value": "Bearer {{token}}" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"type\": \"PIX\",\n  \"amount\": 500.00\n}"
-        }
-      }
-    },
-    {
-      "name": "GET /actuator/health",
-      "request": {
-        "method": "GET",
-        "url": "{{base_url}}/actuator/health"
-      }
-    },
-    {
-      "name": "GET /actuator/prometheus",
-      "request": {
-        "method": "GET",
-        "url": "{{base_url}}/actuator/prometheus"
-      }
-    }
-  ]
-}
-```
-
----
-
-## 9. Estrutura de Pastas
-
-```
-TransactionService/
-├── Dockerfile                          # Build multi-stage: Maven 3.9.9 + Eclipse Temurin 21
-├── docker-compose.yml                  # Orquestração: transaction-service + localstack + wiremock
-├── pom.xml                             # Dependências Maven (Java 21, Spring Boot 3.3.5)
-├── scripts/
-│   └── localstack-init.sh              # Cria a fila SQS 'transactions' no LocalStack na inicialização
-├── wiremock/
-│   └── mappings/
-│       └── login-service.json          # Stub: GET /me → SessionDTO com contractService: true
-└── src/
-    ├── main/
-    │   ├── java/com/transactionservice/
-    │   │   ├── TransactionServiceApplication.java     # @SpringBootApplication – ponto de entrada
-    │   │   │
-    │   │   ├── controller/
-    │   │   │   ├── TransactionController.java          # @RestController POST /transactions
-    │   │   │   └── GlobalExceptionHandler.java         # @RestControllerAdvice – mapeamento de exceções → HTTP
-    │   │   │
-    │   │   ├── service/
-    │   │   │   ├── TransactionService.java             # Interface: processTransaction(request, idempotencyKey)
-    │   │   │   ├── TransactionServiceImpl.java         # Implementação: orquestra validação, sessão e SQS
-    │   │   │   └── TransactionValidator.java           # Valida tipo (not null) e valor (0.01..1.000.000)
-    │   │   │
-    │   │   ├── domain/
-    │   │   │   └── TransactionType.java                # Enum: PIX, PAGAMENTO, RECEBIMENTO, CARTAO, INVESTIMENTO
-    │   │   │
-    │   │   ├── domains/                                # Interfaces de domínio (Ports – Hexagonal)
-    │   │   │   ├── LoginClientDomain.java              # Port: getSession(token) → SessionDTO
-    │   │   │   └── SqsProducerDomain.java              # Port: publish(event)
-    │   │   │
-    │   │   ├── adapters/                               # Adapters que implementam os Ports
-    │   │   │   ├── LoginClientAdapter.java             # Delega para LoginClient (infra)
-    │   │   │   └── SqsProducerAdapter.java             # Delega para SqsProducer (infra)
-    │   │   │
-    │   │   ├── model/
-    │   │   │   ├── request/
-    │   │   │   │   └── TransactionRequest.java         # Record: type + amount (validação Bean)
-    │   │   │   ├── response/
-    │   │   │   │   ├── TransactionResponse.java        # Record: transactionId, customerId, type, amount, status, timestamp
-    │   │   │   │   └── ErrorResponse.java              # Record: status, error, message, timestamp, details
-    │   │   │   ├── event/
-    │   │   │   │   └── TransactionEvent.java           # Record: eventId, customerId, type, amount, channel, timestamp
-    │   │   │   └── session/
-    │   │   │       └── SessionDTO.java                 # Record: sessionId, username, contractService, symmetricKey, role
-    │   │   │
-    │   │   ├── exception/
-    │   │   │   ├── BusinessException.java              # Regra de negócio violada → HTTP 422
-    │   │   │   ├── UnauthorizedException.java          # Não autenticado → HTTP 401
-    │   │   │   └── LoginServiceUnavailableException.java # LoginService fora → HTTP 503
-    │   │   │
-    │   │   ├── infrastructure/
-    │   │   │   ├── client/
-    │   │   │   │   └── LoginClient.java                # WebClient + @CircuitBreaker + @Retry → GET /api/v1/auth/me
-    │   │   │   ├── security/
-    │   │   │   │   ├── SecurityConfig.java             # SecurityFilterChain: JWT stateless, CSRF off
-    │   │   │   │   ├── JwtAuthenticationFilter.java    # OncePerRequestFilter: extrai sub/channel/roles
-    │   │   │   │   ├── JwtTokenProvider.java           # Parse e validação JWT com HMAC-SHA
-    │   │   │   │   └── JwtDetails.java                 # Record: channel + rawToken (armazenado em authentication.details)
-    │   │   │   └── sqs/
-    │   │   │       └── SqsProducer.java                # SqsClient.sendMessage() + @Retry + métricas Micrometer
-    │   │   │
-    │   │   └── config/
-    │   │       ├── WebClientConfig.java                # Bean 'loginServiceWebClient' com timeouts Netty
-    │   │       ├── SqsConfig.java                      # Bean SqsClient (credenciais + endpoint override)
-    │   │       └── JacksonConfig.java                  # ObjectMapper: JavaTimeModule, ISO dates, ignora campos extras
-    │   │
-    │   └── resources/
-    │       └── application.yml                         # Configuração principal (secrets via env vars)
-    │
-    └── test/
-        ├── java/com/transactionservice/
-        │   ├── JwtTestHelper.java                      # Gera tokens JWT para testes (Base64-decode do secret)
-        │   ├── controller/
-        │   │   └── TransactionControllerIntegrationTest.java  # @SpringBootTest + WireMock + MockMvc
-        │   ├── service/
-        │   │   └── TransactionServiceTest.java         # Testes unitários com Mockito
-        │   └── validator/
-        │       └── TransactionValidatorTest.java       # Testes unitários do TransactionValidator
-        └── resources/
-            └── application-test.yml                    # Perfil de teste: WireMock dinâmico, SQS sem endpoint
-```
-
----
-
-## 10. Variáveis de Ambiente
-
-Todas as variáveis são lidas em `application.yml` com suporte a defaults.
-
-| Variável | Valor no docker-compose.yml | Default em application.yml | Descrição |
-|---|---|---|---|
-| `JWT_SECRET` | `bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA=` | *(obrigatório)* | Segredo para validação JWT (bytes UTF-8) |
-| `LOGIN_SERVICE_URL` | `http://login-service-mock:8081` | `http://login-service:8081` | URL base do LoginService |
-| `LOGIN_SERVICE_TIMEOUT_MILLIS` | *(não definido)* | `2000` | Timeout das chamadas ao LoginService (ms) |
-| `LOGIN_SERVICE_FAIL_FAST` | `true` | `true` | Bloqueia transação se LoginService cair |
-| `SQS_QUEUE_URL` | `http://localstack:4566/000000000000/transactions` | *(obrigatório)* | URL completa da fila SQS |
-| `AWS_REGION` | `us-east-1` | `us-east-1` | Região AWS |
-| `AWS_ENDPOINT` | `http://localstack:4566` | `http://localstack:4566` | Endpoint SQS (override para LocalStack) |
-| `AWS_ACCESS_KEY_ID` | `test` | `test` | Access Key AWS |
-| `AWS_SECRET_ACCESS_KEY` | `test` | `test` | Secret Key AWS |
-| `SPRING_PROFILES_ACTIVE` | `docker` | *(não definido)* | Perfil Spring ativo |
-
-### Resilience4j (application.yml – não sobrescritos por env)
-
-| Configuração | Valor |
+| Código | Cenário |
 |---|---|
-| `resilience4j.circuitbreaker.instances.loginService.sliding-window-size` | `10` |
-| `resilience4j.circuitbreaker.instances.loginService.failure-rate-threshold` | `50` |
-| `resilience4j.circuitbreaker.instances.loginService.wait-duration-in-open-state` | `30s` |
-| `resilience4j.retry.instances.loginService.max-attempts` | `3` |
-| `resilience4j.retry.instances.loginService.wait-duration` | `500ms` |
-| `resilience4j.retry.instances.sqsPublish.max-attempts` | `3` |
-| `resilience4j.retry.instances.sqsPublish.wait-duration` | `500ms` |
+| `400` | Request body inválido (campos obrigatórios ausentes ou formato incorreto) |
+| `401` | Token JWT ausente, inválido ou expirado |
+| `403` | Role insuficiente (RESPONSAVEL acessando aluno não vinculado) |
+| `422` | Regra de negócio violada (ex: cobrança duplicada para o mesmo mês) |
+| `503` | Login-service indisponível (circuit breaker aberto) |
 
 ---
 
-## 11. Troubleshooting
+## 10. Estrutura de Pastas
 
-### ❌ HTTP 401 Unauthorized ao chamar `POST /transactions`
-
-**Causas possíveis:**
-
-1. **Token ausente** – verifique se o header `Authorization: Bearer <token>` está presente.
-2. **Token expirado** – a claim `exp` é menor que `now()`. Gere um novo token.
-3. **Assinatura inválida** – o token foi assinado com um secret diferente de `JWT_SECRET`. Confirme que o secret UTF-8 do token corresponde ao valor da variável `JWT_SECRET` da aplicação.
-4. **Formato incorreto** – o header deve ser exatamente `Bearer ` + token (com espaço).
-
-**Verificação:**
-
-```bash
-# Verificar se o serviço está rodando
-curl http://localhost:8080/actuator/health
-
-# Decodificar o JWT (sem verificar assinatura) para inspecionar claims
-# https://jwt.io ou:
-echo "<TOKEN>" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -m json.tool
+```
+src/main/java/com/transactionservice/
+├── TransactionServiceApplication.java
+├── adapters/                          # Adaptadores hexagonais
+│   ├── LoginClientAdapter.java
+│   └── SqsProducerAdapter.java
+├── config/                            # Configurações gerais (Jackson, WebClient)
+├── controller/                        # GlobalExceptionHandler
+├── domains/                           # Ports (interfaces do domínio)
+│   ├── LoginClientDomain.java
+│   └── SqsProducerDomain.java
+├── exception/                         # Exceções de domínio
+├── financeiro/                        # Módulo financeiro (domínio principal)
+│   ├── controller/
+│   │   └── AlunoFinanceiroController.java
+│   ├── domain/
+│   │   └── StatusFinanceiro.java      # PENDENTE, PAGO, ATRASADO
+│   ├── dto/
+│   │   ├── AlunoFinanceiroResponse.java
+│   │   ├── GerarMensalidadeRequest.java
+│   │   └── PagamentoRequest.java
+│   ├── entity/
+│   │   └── AlunoFinanceiroEntity.java
+│   ├── event/                         # Eventos SQS do domínio financeiro
+│   │   ├── FinanceiroBaseEvent.java
+│   │   ├── CobrancaGeradaEvent.java
+│   │   ├── PagamentoConfirmadoEvent.java
+│   │   └── CobrancaAtrasadaEvent.java
+│   ├── repository/
+│   │   └── AlunoFinanceiroRepository.java  # In-memory (ConcurrentHashMap)
+│   ├── security/
+│   │   └── AlunoFinanceiroAccessControl.java
+│   └── service/
+│       ├── AlunoFinanceiroService.java
+│       └── AlunoFinanceiroServiceImpl.java
+├── infrastructure/
+│   ├── client/
+│   │   └── LoginClient.java           # WebClient + CircuitBreaker + Retry
+│   ├── security/
+│   │   ├── JwtAuthenticationFilter.java
+│   │   ├── JwtDetails.java
+│   │   ├── JwtTokenProvider.java
+│   │   └── SecurityConfig.java
+│   └── sqs/
+│       ├── SqsConfig.java
+│       └── SqsProducer.java           # Resilience4j Retry
+└── model/
+    └── session/
+        └── SessionDTO.java
 ```
 
 ---
 
-### ❌ HTTP 422 – "Channel 'X' is not allowed"
+## 11. Variáveis de Ambiente
 
-O JWT deve conter a claim `"channel": "MOBILE"` (case-insensitive). Qualquer outro valor (ex: `"WEB"`, `"DESKTOP"`) é rejeitado por `TransactionServiceImpl.validateChannel()`.
+| Variável | Default | Descrição |
+|---|---|---|
+| `JWT_SECRET` | — | **Obrigatório.** Chave secreta para validação JWT |
+| `LOGIN_SERVICE_URL` | `http://login-service:8081` | URL do login-service |
+| `LOGIN_SERVICE_TIMEOUT_MILLIS` | `2000` | Timeout para chamadas ao login-service |
+| `LOGIN_SERVICE_FAIL_FAST` | `true` | Se `true`, bloqueia em caso de indisponibilidade |
+| `SQS_QUEUE_URL` | — | **Obrigatório.** URL da fila SQS |
+| `AWS_ENDPOINT` | `http://localstack:4566` | Endpoint AWS (LocalStack em dev) |
+| `AWS_REGION` | `us-east-1` | Região AWS |
+| `AWS_ACCESS_KEY_ID` | `test` | Credencial AWS (LocalStack usa `test`) |
+| `AWS_SECRET_ACCESS_KEY` | `test` | Credencial AWS (LocalStack usa `test`) |
 
 ---
 
-### ❌ HTTP 503 – "Authentication service is temporarily unavailable"
+## 12. Observabilidade
 
-O Circuit Breaker do `LoginClient` está aberto ou o fallback foi acionado com `LOGIN_SERVICE_FAIL_FAST=true`.
+### Health Check
 
-**Diagnóstico:**
-
-```bash
-# Verificar estado do Circuit Breaker
-curl http://localhost:8080/actuator/circuitbreakers
-
-# Verificar se o WireMock está respondendo
-curl http://localhost:8081/me -H "Authorization: Bearer qualquer-token"
-
-# Logs do transaction-service
-docker compose logs transaction-service | grep -i "circuit\|fallback\|loginservice"
+```
+GET /actuator/health
+GET /actuator/info
 ```
 
-**Solução:** Aguarde 30 segundos (tempo de OPEN state) para o Circuit Breaker ir para HALF-OPEN, ou reinicie o `login-service-mock`.
+### Métricas Prometheus
 
----
-
-### ❌ SQS: `QueueDoesNotExist`
-
-A fila `transactions` não foi criada no LocalStack.
-
-**Solução:**
-
-```bash
-# Verificar se a fila existe
-docker compose exec localstack awslocal sqs list-queues --region us-east-1
-
-# Criar a fila manualmente
-docker compose exec localstack awslocal sqs create-queue \
-  --queue-name transactions \
-  --region us-east-1
-
-# Verificar logs do init script
-docker compose logs localstack | grep -i "transactions\|init"
+```
+GET /actuator/prometheus
 ```
 
----
+Métricas disponíveis:
+- `financeiro.eventos.enviados.sqs` — eventos financeiros publicados no SQS
+- `sqs.publish.duration` — latência de publicação no SQS
+- Circuit Breaker do login-service (`loginService`)
+- Retry do SQS (`sqsPublish`)
 
-### ❌ JWT signature does not match / JWT_SECRET mismatch
+### Circuit Breaker
 
-O `JwtTokenProvider` usa **os bytes UTF-8 do valor bruto de `JWT_SECRET`** (não decodifica Base64). Certifique-se de que o gerador do token usa o mesmo mecanismo:
-
-```python
-# CORRETO: bytes UTF-8 do secret
-key = secret.encode("utf-8")
-
-# ERRADO (não use):
-key = base64.b64decode(secret)
-```
-
-Para o ambiente de teste (`mvn test`), o `JwtTestHelper` usa `Base64.getDecoder().decode(SECRET)` — válido apenas no contexto dos testes, não para tokens do Docker.
-
----
-
-### ❌ `Connection refused` ao LocalStack
-
-Verifique se o LocalStack subiu corretamente:
-
-```bash
-curl http://localhost:4566/_localstack/health
-docker compose ps localstack
-docker compose logs localstack
-```
-
-Se o health check falhar, tente:
-
-```bash
-docker compose down -v
-docker compose up localstack
-```
-
----
-
-### ❌ `transaction-service` não sobe / OOMKilled
-
-O build Maven dentro do Docker pode precisar de mais memória.
-
-```bash
-# Adicionar MAVEN_OPTS ao build
-docker compose build --build-arg MAVEN_OPTS="-Xmx512m" transaction-service
-```
-
----
-
-## 12. Próximos Passos e Melhorias
-
-Com base no código existente, as seguintes melhorias são sugeridas:
-
-### 🔒 Segurança
-
-- **Ativar validação de `contractService`**: O bloco de código em `TransactionServiceImpl.fetchAndValidateSession()` que rejeita clientes sem `contractService = true` está comentado. Avaliar ativação conforme regra de negócio.
-- **Rotação de JWT_SECRET**: Implementar suporte a múltiplos secrets para rotação sem downtime.
-- **Rate Limiting**: Adicionar filtro de rate limit por `customerId` para evitar abuso da API.
-
-### 📊 Observabilidade
-
-- **Distributed Tracing**: Integrar OpenTelemetry / Zipkin para rastrear requisições entre `transaction-service` e `LoginService`.
-- **Alertas Prometheus**: Configurar alertas para `transactions.failures` acima de threshold e Circuit Breaker em estado OPEN.
-- **Structured Logging**: Adicionar `traceId` e `spanId` nos logs JSON para correlação entre serviços.
-
-### 🏗️ Arquitetura
-
-- **Dead Letter Queue (DLQ)**: Configurar DLQ no SQS para mensagens que falharam após todas as retentativas, evitando perda de eventos.
-- **Fila FIFO**: Para garantia de ordem por cliente (`customerId`), migrar para SQS FIFO. O código já suporta (`fifoQueue` flag no `SqsProducer`).
-- **Persistência de auditoria**: Adicionar persistência em banco de dados (PostgreSQL ou DynamoDB) para rastreabilidade de todas as transações processadas.
-- **Consumer SQS**: Implementar o consumidor da fila `transactions` como serviço separado para completar o fluxo event-driven.
-
-### 🧪 Testes
-
-- **Testes de contrato**: Adicionar Pact (Consumer-Driven Contract) entre `transaction-service` e `LoginService` para garantir compatibilidade de interface.
-- **Testes de carga**: Implementar testes com Gatling ou k6 para validar comportamento sob carga e o Circuit Breaker.
-- **Cobertura**: Aumentar cobertura dos testes de integração com cenários de timeout e partial failures no LoginService.
-
-### 🐳 Infraestrutura
-
-- **Kubernetes / Helm**: Adicionar manifests K8s ou chart Helm para deploy em produção.
-- **CI/CD**: Pipeline GitHub Actions com build, test, análise estática (SonarQube) e push de imagem para registry.
-- **Secrets Management**: Substituir variáveis de ambiente por integração com AWS Secrets Manager ou HashiCorp Vault.
-
----
-
-## 📝 Licença
-
-Este projeto é de uso interno e fins educacionais.
-
----
-
-## 13. Módulo Financeiro
-
-O módulo financeiro foi adicionado ao projeto seguindo a arquitetura e convenções existentes.
-
-**Pacote:** `com.transactionservice.financeiro`
-
-**Documentação completa:** [`docs/financeiro.md`](docs/financeiro.md)
-
-### Endpoints disponíveis
-
-| Método | URL | Roles | Descrição |
-|--------|-----|-------|-----------|
-| `GET` | `/api/v1/financeiro/{alunoId}?mes=YYYY-MM` | ADMIN, RESPONSAVEL | Consulta cobranças por aluno |
-| `GET` | `/api/v1/financeiro?alunoId=&mes=` | ADMIN, RESPONSAVEL | Consulta cobranças via query params |
-| `POST` | `/api/v1/financeiro/gerar-mensal` | ADMIN | Gera cobrança mensal |
-| `PATCH` | `/api/v1/financeiro/{id}/interno/pagamento` | ADMIN | Atualiza status de pagamento (uso interno) |
-
-### Regras críticas de segurança
-
-- `escolaId` nunca é aceito do cliente — extraído do JWT (`escola_id` claim) para multi-tenancy.
-- `total` nunca é aceito do cliente — calculado no backend: `mensalidade + alimentacao + multa + juros`.
-- RESPONSAVEL só acessa alunos listados no claim `alunos_ids` do JWT.
-- Todos os endpoints exigem Bearer JWT válido.
+O `LoginClient` está protegido por Circuit Breaker + Retry (Resilience4j):
+- **Circuit Breaker** `loginService`: abre após 50% de falhas em janela de 10 chamadas
+- **Retry** `loginService`: até 3 tentativas com backoff exponencial (500ms base)
+- **Retry** `sqsPublish`: até 3 tentativas para falhas transitórias no SQS
