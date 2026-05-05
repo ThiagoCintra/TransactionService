@@ -5,9 +5,6 @@ spring:
 server:
   port: 8080
 
-jwt:
-  secret: ${JWT_SECRET}
-
 login-service:
   base-url: ${LOGIN_SERVICE_URL:http://login-service:8081}
   timeout-millis: ${LOGIN_SERVICE_TIMEOUT_MILLIS:2000}

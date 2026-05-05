@@ -13,8 +13,7 @@ import com.transactionservice.financeiro.event.CobrancaGeradaEvent;
 import com.transactionservice.financeiro.event.PagamentoConfirmadoEvent;
 import com.transactionservice.financeiro.repository.AlunoFinanceiroRepository;
 import com.transactionservice.financeiro.security.AlunoFinanceiroAccessControl;
-import com.transactionservice.infrastructure.security.JwtDetails;
-import com.transactionservice.infrastructure.security.JwtTokenProvider;
+import com.transactionservice.model.session.SessionDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -34,7 +33,6 @@ public class AlunoFinanceiroServiceImpl implements AlunoFinanceiroService {
 
     private final AlunoFinanceiroRepository repository;
     private final AlunoFinanceiroAccessControl accessControl;
-    private final JwtTokenProvider jwtTokenProvider;
     private final SqsProducerDomain sqsProducer;
 
     @Override
@@ -170,10 +168,10 @@ public class AlunoFinanceiroServiceImpl implements AlunoFinanceiroService {
     }
 
     private Long extrairEscolaId(Authentication auth) {
-        JwtDetails jwtDetails = (JwtDetails) auth.getDetails();
-        Long escolaId = jwtTokenProvider.getEscolaId(jwtDetails.rawToken());
+        SessionDTO session = (SessionDTO) auth.getDetails();
+        Long escolaId = session.escolaId();
         if (escolaId == null) {
-            throw new BusinessException("Token inválido: claim escola_id não encontrado");
+            throw new BusinessException("Sessão inválida: escolaId não encontrado");
         }
         return escolaId;
     }

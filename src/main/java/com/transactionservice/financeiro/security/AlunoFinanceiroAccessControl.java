@@ -1,8 +1,6 @@
 package com.transactionservice.financeiro.security;
 
-import com.transactionservice.infrastructure.security.JwtDetails;
-import com.transactionservice.infrastructure.security.JwtTokenProvider;
-import lombok.RequiredArgsConstructor;
+import com.transactionservice.model.session.SessionDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -16,17 +14,14 @@ import java.util.List;
  * <p>Regras:
  * <ul>
  *   <li>ADMIN → acesso total a todos os recursos.</li>
- *   <li>RESPONSAVEL → acesso apenas aos alunos vinculados (via claim {@code alunos_ids} no JWT).</li>
+ *   <li>RESPONSAVEL → acesso apenas aos alunos vinculados (via {@code alunosIds} da sessão).</li>
  * </ul>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AlunoFinanceiroAccessControl {
 
     private static final String ROLE_ADMIN = "ADMIN";
-
-    private final JwtTokenProvider jwtTokenProvider;
 
     /**
      * Valida que o usuário autenticado pode acessar os dados do {@code alunoId} informado.
@@ -36,17 +31,15 @@ public class AlunoFinanceiroAccessControl {
      * @throws AccessDeniedException se o acesso não for permitido
      */
     public void validarAcessoAluno(Long alunoId, Authentication auth) {
-        List<String> roles = extrairRoles(auth);
+        SessionDTO session = extractSession(auth);
+        List<String> roles = session.roles() != null ? session.roles() : List.of();
 
         if (roles.contains(ROLE_ADMIN)) {
             log.debug("Acesso ADMIN concedido para alunoId='{}'", alunoId);
             return;
         }
 
-        // RESPONSAVEL: valida vínculo via claim alunos_ids do JWT
-        JwtDetails jwtDetails = (JwtDetails) auth.getDetails();
-        List<Long> alunosIds = jwtTokenProvider.getAlunosIds(jwtDetails.rawToken());
-
+        List<Long> alunosIds = session.alunosIds() != null ? session.alunosIds() : List.of();
         if (!alunosIds.contains(alunoId)) {
             log.warn("Acesso negado: usuario='{}' tentou acessar alunoId='{}'",
                     auth.getPrincipal(), alunoId);
@@ -64,15 +57,15 @@ public class AlunoFinanceiroAccessControl {
      * @throws AccessDeniedException se não for ADMIN
      */
     public void validarAcessoAdmin(Authentication auth) {
-        if (!extrairRoles(auth).contains(ROLE_ADMIN)) {
+        SessionDTO session = extractSession(auth);
+        List<String> roles = session.roles() != null ? session.roles() : List.of();
+        if (!roles.contains(ROLE_ADMIN)) {
             log.warn("Acesso ADMIN negado para usuario='{}'", auth.getPrincipal());
-            throw new AccessDeniedException(
-                    "Acesso negado: operação restrita a ADMIN");
+            throw new AccessDeniedException("Acesso negado: operação restrita a ADMIN");
         }
     }
 
-    private List<String> extrairRoles(Authentication auth) {
-        JwtDetails jwtDetails = (JwtDetails) auth.getDetails();
-        return jwtTokenProvider.getRoles(jwtDetails.rawToken());
+    private SessionDTO extractSession(Authentication auth) {
+        return (SessionDTO) auth.getDetails();
     }
 }

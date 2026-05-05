@@ -10,8 +10,7 @@ import com.transactionservice.financeiro.dto.PagamentoRequest;
 import com.transactionservice.financeiro.entity.AlunoFinanceiroEntity;
 import com.transactionservice.financeiro.repository.AlunoFinanceiroRepository;
 import com.transactionservice.financeiro.security.AlunoFinanceiroAccessControl;
-import com.transactionservice.infrastructure.security.JwtDetails;
-import com.transactionservice.infrastructure.security.JwtTokenProvider;
+import com.transactionservice.model.session.SessionDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,27 +48,32 @@ class AlunoFinanceiroServiceTest {
     private AlunoFinanceiroAccessControl accessControl;
 
     @Mock
-    private JwtTokenProvider jwtTokenProvider;
-
-    @Mock
     private SqsProducerDomain sqsProducer;
 
     private AlunoFinanceiroService service;
 
     private static final Long ESCOLA_ID = 10L;
     private static final Long ALUNO_ID = 42L;
-    private static final String RAW_TOKEN = "raw-jwt-token";
 
     @BeforeEach
     void setUp() {
-        service = new AlunoFinanceiroServiceImpl(repository, accessControl, jwtTokenProvider, sqsProducer);
+        service = new AlunoFinanceiroServiceImpl(repository, accessControl, sqsProducer);
         SecurityContextHolder.clearContext();
     }
 
     private void setAuthentication(String role) {
+        SessionDTO session = new SessionDTO("user-1", "user-1", List.of(role), ESCOLA_ID, List.of(ALUNO_ID));
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 "user-1", null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
-        auth.setDetails(new JwtDetails("MOBILE", RAW_TOKEN));
+        auth.setDetails(session);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    private void setAuthenticationWithoutEscolaId(String role) {
+        SessionDTO session = new SessionDTO("user-1", "user-1", List.of(role), null, List.of());
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                "user-1", null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+        auth.setDetails(session);
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
@@ -81,7 +85,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve retornar lista de cobranças por aluno sem filtro de mês")
     void deveRetornarCobrancasPorAluno() {
         setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doNothing().when(accessControl).validarAcessoAluno(eq(ALUNO_ID), any());
 
         AlunoFinanceiroEntity entity = buildEntity(1L, StatusFinanceiro.PENDENTE);
@@ -99,7 +102,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve retornar lista filtrada por mês")
     void deveRetornarCobrancasFiltradasPorMes() {
         setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doNothing().when(accessControl).validarAcessoAluno(eq(ALUNO_ID), any());
 
         AlunoFinanceiroEntity entity = buildEntity(1L, StatusFinanceiro.PENDENTE);
@@ -122,14 +124,13 @@ class AlunoFinanceiroServiceTest {
     }
 
     @Test
-    @DisplayName("Deve lançar BusinessException quando escolaId não está no JWT")
+    @DisplayName("Deve lançar BusinessException quando escolaId não está na sessão")
     void deveLancarBusinessExceptionQuandoEscolaIdAusente() {
-        setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(null);
+        setAuthenticationWithoutEscolaId("ADMIN");
 
         assertThatThrownBy(() -> service.consultarPorAluno(ALUNO_ID, null))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("escola_id");
+                .hasMessageContaining("escolaId");
 
         verify(repository, never()).findByAlunoIdAndEscolaId(any(), any());
     }
@@ -138,7 +139,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve propagar AccessDeniedException quando acesso ao aluno não é permitido")
     void devePropagaAccessDeniedQuandoAcessoNaoPermitido() {
         setAuthentication("RESPONSAVEL");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doThrow(new AccessDeniedException("Acesso negado"))
                 .when(accessControl).validarAcessoAluno(eq(ALUNO_ID), any());
 
@@ -154,7 +154,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve gerar mensalidade com total calculado no backend")
     void deveGerarMensalidadeComTotalCalculado() {
         setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doNothing().when(accessControl).validarAcessoAdmin(any());
         when(repository.existsByAlunoIdAndMesReferenciaAndEscolaId(ALUNO_ID, "2025-05", ESCOLA_ID))
                 .thenReturn(false);
@@ -183,7 +182,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve calcular total corretamente quando multa e juros são nulos")
     void deveCalcularTotalSemMultaEJuros() {
         setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doNothing().when(accessControl).validarAcessoAdmin(any());
         when(repository.existsByAlunoIdAndMesReferenciaAndEscolaId(ALUNO_ID, "2025-05", ESCOLA_ID))
                 .thenReturn(false);
@@ -212,7 +210,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve lançar BusinessException quando já existe cobrança para o mês")
     void deveLancarBusinessExceptionParaMesDuplicado() {
         setAuthentication("ADMIN");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doNothing().when(accessControl).validarAcessoAdmin(any());
         when(repository.existsByAlunoIdAndMesReferenciaAndEscolaId(ALUNO_ID, "2025-05", ESCOLA_ID))
                 .thenReturn(true);
@@ -232,7 +229,6 @@ class AlunoFinanceiroServiceTest {
     @DisplayName("Deve lançar AccessDeniedException quando não ADMIN tenta gerar mensalidade")
     void deveLancarAccessDeniedParaNaoAdminGerarMensalidade() {
         setAuthentication("RESPONSAVEL");
-        when(jwtTokenProvider.getEscolaId(RAW_TOKEN)).thenReturn(ESCOLA_ID);
         doThrow(new AccessDeniedException("Acesso negado"))
                 .when(accessControl).validarAcessoAdmin(any());
 
