@@ -1,9 +1,11 @@
 package com.transactionservice.model.session;
 
+import java.util.List;
+
 public record SessionDTO(
-        String sessionId,
+        String userId,
         String username,
-        Boolean contractService,
-        String symmetricKey,
-        String role
+        List<String> roles,
+        Long escolaId,
+        List<Long> alunosIds
 ) {}

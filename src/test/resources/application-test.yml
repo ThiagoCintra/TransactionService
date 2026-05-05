@@ -2,9 +2,6 @@ spring:
   application:
     name: transaction-service-test
 
-jwt:
-  secret: bXlTdXBlclNlY3JldEtleUZvckpXVFRva2VuR2VuZXJhdGlvbjEyMzQ1Njc4OTA=
-
 login-service:
   base-url: http://localhost:${wiremock.server.port:8099}
   timeout-millis: 5000

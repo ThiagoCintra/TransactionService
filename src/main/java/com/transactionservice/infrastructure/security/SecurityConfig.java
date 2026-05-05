@@ -1,5 +1,6 @@
 package com.transactionservice.infrastructure.security;
 
+import com.transactionservice.domains.LoginClientDomain;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -16,11 +17,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final JwtTokenProvider jwtTokenProvider;
+    private final LoginClientDomain loginClient;
 
     @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter() {
-        return new JwtAuthenticationFilter(jwtTokenProvider);
+    public LoginClientAuthenticationFilter loginClientAuthenticationFilter() {
+        return new LoginClientAuthenticationFilter(loginClient);
     }
 
     @Bean
@@ -28,7 +29,7 @@ public class SecurityConfig {
         return http
                 /*
                  * CSRF protection is intentionally disabled because this service is a
-                 * stateless REST API that uses JWT Bearer tokens for authentication.
+                 * stateless REST API that delegates authentication to login-service.
                  * CSRF attacks exploit browser-based cookie authentication and are not
                  * applicable when tokens are transmitted via the Authorization header.
                  */
@@ -43,7 +44,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) ->
                                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
                 )
-                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(loginClientAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }
