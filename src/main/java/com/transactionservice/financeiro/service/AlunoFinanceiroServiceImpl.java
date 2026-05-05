@@ -1,5 +1,6 @@
 package com.transactionservice.financeiro.service;
 
+import com.transactionservice.domains.SqsProducerDomain;
 import com.transactionservice.exception.BusinessException;
 import com.transactionservice.exception.UnauthorizedException;
 import com.transactionservice.financeiro.domain.StatusFinanceiro;
@@ -7,6 +8,9 @@ import com.transactionservice.financeiro.dto.AlunoFinanceiroResponse;
 import com.transactionservice.financeiro.dto.GerarMensalidadeRequest;
 import com.transactionservice.financeiro.dto.PagamentoRequest;
 import com.transactionservice.financeiro.entity.AlunoFinanceiroEntity;
+import com.transactionservice.financeiro.event.CobrancaAtrasadaEvent;
+import com.transactionservice.financeiro.event.CobrancaGeradaEvent;
+import com.transactionservice.financeiro.event.PagamentoConfirmadoEvent;
 import com.transactionservice.financeiro.repository.AlunoFinanceiroRepository;
 import com.transactionservice.financeiro.security.AlunoFinanceiroAccessControl;
 import com.transactionservice.infrastructure.security.JwtDetails;
@@ -18,8 +22,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -29,6 +35,7 @@ public class AlunoFinanceiroServiceImpl implements AlunoFinanceiroService {
     private final AlunoFinanceiroRepository repository;
     private final AlunoFinanceiroAccessControl accessControl;
     private final JwtTokenProvider jwtTokenProvider;
+    private final SqsProducerDomain sqsProducer;
 
     @Override
     public List<AlunoFinanceiroResponse> consultarPorAluno(Long alunoId, String mes) {
@@ -94,6 +101,17 @@ public class AlunoFinanceiroServiceImpl implements AlunoFinanceiroService {
 
         AlunoFinanceiroEntity saved = repository.save(entity);
         log.info("Mensalidade gerada: id='{}', total='{}'", saved.getId(), saved.getTotal());
+
+        sqsProducer.publish(new CobrancaGeradaEvent(
+                UUID.randomUUID().toString(),
+                escolaId,
+                saved.getAlunoId(),
+                saved.getId(),
+                saved.getMesReferencia(),
+                saved.getTotal(),
+                Instant.now()
+        ));
+
         return AlunoFinanceiroResponse.from(saved);
     }
 
@@ -108,11 +126,34 @@ public class AlunoFinanceiroServiceImpl implements AlunoFinanceiroService {
                 .orElseThrow(() -> new BusinessException(
                         "Registro financeiro não encontrado: " + id));
 
+        Long escolaId = entity.getEscolaId();
         entity.setStatus(request.status());
         entity.setDataAtualizacao(LocalDateTime.now());
 
         AlunoFinanceiroEntity saved = repository.save(entity);
         log.info("Pagamento registrado: id='{}', status='{}'", saved.getId(), saved.getStatus());
+
+        if (StatusFinanceiro.PAGO.equals(saved.getStatus())) {
+            sqsProducer.publish(new PagamentoConfirmadoEvent(
+                    UUID.randomUUID().toString(),
+                    escolaId,
+                    saved.getAlunoId(),
+                    saved.getId(),
+                    saved.getMesReferencia(),
+                    Instant.now()
+            ));
+        } else if (StatusFinanceiro.ATRASADO.equals(saved.getStatus())) {
+            sqsProducer.publish(new CobrancaAtrasadaEvent(
+                    UUID.randomUUID().toString(),
+                    escolaId,
+                    saved.getAlunoId(),
+                    saved.getId(),
+                    saved.getMesReferencia(),
+                    saved.getTotal(),
+                    Instant.now()
+            ));
+        }
+
         return AlunoFinanceiroResponse.from(saved);
     }
 

@@ -1,5 +1,6 @@
 package com.transactionservice.financeiro.service;
 
+import com.transactionservice.domains.SqsProducerDomain;
 import com.transactionservice.exception.BusinessException;
 import com.transactionservice.exception.UnauthorizedException;
 import com.transactionservice.financeiro.domain.StatusFinanceiro;
@@ -50,6 +51,9 @@ class AlunoFinanceiroServiceTest {
     @Mock
     private JwtTokenProvider jwtTokenProvider;
 
+    @Mock
+    private SqsProducerDomain sqsProducer;
+
     private AlunoFinanceiroService service;
 
     private static final Long ESCOLA_ID = 10L;
@@ -58,7 +62,7 @@ class AlunoFinanceiroServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AlunoFinanceiroServiceImpl(repository, accessControl, jwtTokenProvider);
+        service = new AlunoFinanceiroServiceImpl(repository, accessControl, jwtTokenProvider, sqsProducer);
         SecurityContextHolder.clearContext();
     }
 
