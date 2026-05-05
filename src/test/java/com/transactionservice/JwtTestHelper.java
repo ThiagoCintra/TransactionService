@@ -48,4 +48,29 @@ public class JwtTestHelper {
     public static String generateNonMobileToken(String username) {
         return generateToken(username, "WEB", List.of("USER"));
     }
+
+    public static String generateAdminToken(String username, Long escolaId) {
+        return Jwts.builder()
+                .subject(username)
+                .claim("channel", "MOBILE")
+                .claim("roles", List.of("ADMIN"))
+                .claim("escola_id", escolaId)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 3600_000))
+                .signWith(KEY)
+                .compact();
+    }
+
+    public static String generateResponsavelToken(String username, Long escolaId, List<Long> alunosIds) {
+        return Jwts.builder()
+                .subject(username)
+                .claim("channel", "MOBILE")
+                .claim("roles", List.of("RESPONSAVEL"))
+                .claim("escola_id", escolaId)
+                .claim("alunos_ids", alunosIds)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 3600_000))
+                .signWith(KEY)
+                .compact();
+    }
 }

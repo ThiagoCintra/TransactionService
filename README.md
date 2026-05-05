@@ -29,6 +29,7 @@ Microsserviço de **processamento de transações financeiras**, desenvolvido em
 10. [Variáveis de Ambiente](#10-variáveis-de-ambiente)
 11. [Troubleshooting](#11-troubleshooting)
 12. [Próximos Passos e Melhorias](#12-próximos-passos-e-melhorias)
+13. [Módulo Financeiro](#13-módulo-financeiro)
 
 ---
 
@@ -1168,3 +1169,29 @@ Com base no código existente, as seguintes melhorias são sugeridas:
 ## 📝 Licença
 
 Este projeto é de uso interno e fins educacionais.
+
+---
+
+## 13. Módulo Financeiro
+
+O módulo financeiro foi adicionado ao projeto seguindo a arquitetura e convenções existentes.
+
+**Pacote:** `com.transactionservice.financeiro`
+
+**Documentação completa:** [`docs/financeiro.md`](docs/financeiro.md)
+
+### Endpoints disponíveis
+
+| Método | URL | Roles | Descrição |
+|--------|-----|-------|-----------|
+| `GET` | `/api/v1/financeiro/{alunoId}?mes=YYYY-MM` | ADMIN, RESPONSAVEL | Consulta cobranças por aluno |
+| `GET` | `/api/v1/financeiro?alunoId=&mes=` | ADMIN, RESPONSAVEL | Consulta cobranças via query params |
+| `POST` | `/api/v1/financeiro/gerar-mensal` | ADMIN | Gera cobrança mensal |
+| `PATCH` | `/api/v1/financeiro/{id}/interno/pagamento` | ADMIN | Atualiza status de pagamento (uso interno) |
+
+### Regras críticas de segurança
+
+- `escolaId` nunca é aceito do cliente — extraído do JWT (`escola_id` claim) para multi-tenancy.
+- `total` nunca é aceito do cliente — calculado no backend: `mensalidade + alimentacao + multa + juros`.
+- RESPONSAVEL só acessa alunos listados no claim `alunos_ids` do JWT.
+- Todos os endpoints exigem Bearer JWT válido.

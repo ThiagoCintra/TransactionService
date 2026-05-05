@@ -64,6 +64,36 @@ public class JwtTokenProvider {
         return List.of();
     }
 
+    /**
+     * Extrai o claim {@code escola_id} do token para impor multi-tenancy no módulo financeiro.
+     *
+     * @return escolaId como Long, ou {@code null} se o claim não estiver presente
+     */
+    public Long getEscolaId(String token) {
+        Object escolaId = extractAllClaims(token).get("escola_id");
+        if (escolaId instanceof Number n) {
+            return n.longValue();
+        }
+        return null;
+    }
+
+    /**
+     * Extrai o claim {@code alunos_ids} do token — lista de alunos vinculados ao responsável.
+     *
+     * @return lista de IDs de alunos, ou lista vazia se o claim não estiver presente
+     */
+    @SuppressWarnings("unchecked")
+    public List<Long> getAlunosIds(String token) {
+        Object alunosIds = extractAllClaims(token).get("alunos_ids");
+        if (alunosIds instanceof List<?> list) {
+            return list.stream()
+                    .filter(Number.class::isInstance)
+                    .map(o -> ((Number) o).longValue())
+                    .toList();
+        }
+        return List.of();
+    }
+
     private boolean isTokenExpired(Claims claims) {
         Date expiration = claims.getExpiration();
         return expiration != null && expiration.before(new Date());
