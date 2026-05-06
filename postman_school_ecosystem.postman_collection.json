@@ -1,0 +1,415 @@
+{
+  "info": {
+    "name": "Escola - Ecossistema API (Postman Collection)",
+    "description": "Coleção com os endpoints do ecossistema da escola (login, alunos, financeiro, pagamentos). Ordem sugerida de execução e explicações em PT-BR.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1 - Autenticação (login-service)",
+      "description": "Endpoints para registro e obtenção de tokens JWT. Execute estes passos primeiro para obter tokens usados nas demais chamadas.",
+      "item": [
+        {
+          "name": "Register - criar ADMIN (opcional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.escola\",\n  \"password\": \"Admin123456!\",\n  \"escolaId\": 1,\n  \"role\": \"ADMIN\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_login}}/auth/register",
+              "host": ["{{baseUrl_login}}"],
+              "path": ["auth","register"]
+            }
+          },
+          "description": "Registra um usuário com role ADMIN. Útil para obter um token administrativo que será usado pelo `pagamentos-service` e endpoints restritos. Se já existir um admin, pule este passo.",
+          "response": []
+        },
+        {
+          "name": "Register - criar RESPONSAVEL (opcional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"resp.usuario\",\n  \"password\": \"Resp123456!\",\n  \"escolaId\": 1,\n  \"role\": \"RESPONSAVEL\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_login}}/auth/register",
+              "host": ["{{baseUrl_login}}"],
+              "path": ["auth","register"]
+            }
+          },
+          "description": "Registra um responsável (usuário comum). Use este token para chamadas que simulam um responsável (acesso restrito aos alunos vinculados).",
+          "response": []
+        },
+        {
+          "name": "Login - ADMIN (gera {{JWT_ADMIN}})",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.escola\",\n  \"password\": \"Admin123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_login}}/auth/login",
+              "host": ["{{baseUrl_login}}"],
+              "path": ["auth","login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Salva o token retornado em uma variável de coleção chamada JWT_ADMIN",
+                  "try {",
+                  "  var json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('JWT_ADMIN', json.token);",
+                  "    console.log('JWT_ADMIN salvo');",
+                  "  } else {",
+                  "    console.warn('Resposta não contém token');",
+                  "  }",
+                  "} catch (e) { console.warn('Não foi possível parsear resposta JSON: ', e); }"
+                ]
+              }
+            }
+          ],
+          "description": "Realiza login com credenciais de admin e salva o token em {{JWT_ADMIN}}. Use este token para endpoints administrativos (ex.: gerar cobranças, registrar pagamento interno).",
+          "response": []
+        },
+        {
+          "name": "Login - RESPONSAVEL (gera {{JWT_TOKEN}})",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"resp.usuario\",\n  \"password\": \"Resp123456!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_login}}/auth/login",
+              "host": ["{{baseUrl_login}}"],
+              "path": ["auth","login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Salva o token retornado em uma variável de coleção chamada JWT_TOKEN",
+                  "try {",
+                  "  var json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('JWT_TOKEN', json.token);",
+                  "    console.log('JWT_TOKEN salvo');",
+                  "  } else {",
+                  "    console.warn('Resposta não contém token');",
+                  "  }",
+                  "} catch (e) { console.warn('Não foi possível parsear resposta JSON: ', e); }"
+                ]
+              }
+            }
+          ],
+          "description": "Realiza login com credenciais de responsável e salva o token em {{JWT_TOKEN}}. Use este token para chamadas como RESPONSAVEL.",
+          "response": []
+        },
+        {
+          "name": "GET /auth/me - validar token",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl_login}}/auth/me",
+              "host": ["{{baseUrl_login}}"],
+              "path": ["auth","me"]
+            }
+          },
+          "description": "Valida o token atual e retorna informações do usuário (id, username, role, escolaId). Útil para verificar claims e escolaId que serão usados nos demais serviços.",
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 - Alunos (automatico)",
+      "description": "Endpoints do serviço de alunos. Requerem um token JWT (ADMIN ou RESPONSAVEL) e usam o claim escolaId para multi-tenancy.",
+      "item": [
+        {
+          "name": "POST /api/v1/alunos/incluir",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{JWT_ADMIN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"alunos\": [\n    {\n      \"nomeCompleto\": \"João da Silva\",\n      \"cpf\": \"12345678901\",\n      \"rg\": \"1234567\",\n      \"endereco\": { \"logradouro\": \"Rua A\", \"numero\": \"10\", \"bairro\": \"Centro\", \"cidade\": \"São Paulo\", \"estado\": \"SP\", \"cep\": \"01001000\" },\n      \"responsaveis\": [ { \"nomeCompleto\": \"Maria da Silva\", \"cpf\": \"98765432100\", \"usuarioId\": 2 } ],\n      \"valorTotal\": { \"valor\": \"500.00\", \"valorTotal\": \"6000.00\" }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_alunos}}/api/v1/alunos/incluir",
+              "host": ["{{baseUrl_alunos}}"],
+              "path": ["api","v1","alunos","incluir"]
+            }
+          },
+          "description": "Inclui um aluno (requisição protegida por role `ADMIN` ou `SOCIO`). Use para criar o aluno antes de gerar cobranças no transaction-service.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/alunos/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl_alunos}}/api/v1/alunos/{{alunoId}}",
+              "host": ["{{baseUrl_alunos}}"],
+              "path": ["api","v1","alunos","{{alunoId}}"]
+            }
+          },
+          "description": "Consulta dados do aluno. Útil para obter o `alunoId` ou verificar vínculo do responsável. Substitua a variável {{alunoId}} pelo ID criado ou esperado.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/alunos?page=0&size=20",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl_alunos}}/api/v1/alunos?page=0&size=20",
+              "host": ["{{baseUrl_alunos}}"],
+              "path": ["api","v1","alunos"],
+              "query": [ { "key": "page", "value": "0" }, { "key": "size", "value": "20" } ]
+            }
+          },
+          "description": "Lista alunos com paginação. Use para localizar IDs existentes e verificar escopo (apenas alunos da mesma escola).",
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 - Financeiro (transaction-service)",
+      "description": "Endpoints de cobranças — geração, consulta e atualização de status. Use tokens obtidos no login (ADMIN para criação).",
+      "item": [
+        {
+          "name": "POST /api/v1/financeiro/gerar-mensal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{JWT_ADMIN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"alunoId\": {{alunoId}},\n  \"mesReferencia\": \"2025-05\",\n  \"mensalidade\": 500.00,\n  \"alimentacao\": 100.00,\n  \"multa\": 0.00,\n  \"juros\": 0.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_financeiro}}/api/v1/financeiro/gerar-mensal",
+              "host": ["{{baseUrl_financeiro}}"],
+              "path": ["api","v1","financeiro","gerar-mensal"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Extrai o id da cobrança criada e salva em variável de coleção {{cobrancaId}}",
+                  "try {",
+                  "  var json = pm.response.json();",
+                  "  if (json && json.id) {",
+                  "    pm.collectionVariables.set('cobrancaId', json.id);",
+                  "    console.log('cobrancaId set to', json.id);",
+                  "  } else {",
+                  "    console.warn('Resposta não contém id de cobrança. Verifique o body de resposta.');",
+                  "  }",
+                  "} catch (e) { console.warn('Não foi possível parsear resposta JSON: ', e); }"
+                ]
+              }
+            }
+          ],
+          "description": "Gera uma cobrança mensal para um aluno. Repare que `total` e `escolaId` não são enviados — o backend calcula o total e extrai `escolaId` do JWT, garantindo segurança e multi-tenancy. Após criação, o serviço publica um evento SQS `CobrancaGeradaEvent`. Este request salva {{cobrancaId}} automaticamente a partir da resposta.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/financeiro/{alunoId}?mes=YYYY-MM",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl_financeiro}}/api/v1/financeiro/{{alunoId}}?mes=2025-05",
+              "host": ["{{baseUrl_financeiro}}"],
+              "path": ["api","v1","financeiro","{{alunoId}}"],
+              "query": [ { "key": "mes", "value": "2025-05" } ]
+            }
+          },
+          "description": "Consulta cobranças de um aluno por mês. Permite verificar se a cobrança foi criada e o valor total calculado pelo backend.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/financeiro?alunoId=&mes=",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl_financeiro}}/api/v1/financeiro?alunoId={{alunoId}}&mes=2025-05",
+              "host": ["{{baseUrl_financeiro}}"],
+              "path": ["api","v1","financeiro"],
+              "query": [ { "key": "alunoId", "value": "{{alunoId}}" }, { "key": "mes", "value": "2025-05" } ]
+            }
+          },
+          "description": "Mesma consulta via query params — alternativa útil para clients que preferem query string. Retorna lista de cobranças filtradas pelo `escolaId` do JWT.",
+          "response": []
+        },
+        {
+          "name": "PATCH /api/v1/financeiro/{id}/interno/pagamento",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{JWT_ADMIN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"PAGO\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl_financeiro}}/api/v1/financeiro/{{cobrancaId}}/interno/pagamento",
+              "host": ["{{baseUrl_financeiro}}"],
+              "path": ["api","v1","financeiro","{{cobrancaId}}","interno","pagamento"]
+            }
+          },
+          "description": "Endpoint interno usado pelo `pagamentos-service` para notificar confirmação de pagamento. Requer token ADMIN. Inclua {{cobrancaId}} com o id retornado na criação da cobrança.",
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 - Pagamentos (pagamentos-service)",
+      "description": "Endpoints para criação e acompanhamento de pagamentos. Fluxo típico: criar pagamento → provider/processamento → webhook de confirmação → notificações ao transaction-service.",
+      "item": [
+        {
+          "name": "POST /api/v1/pagamentos - criar pagamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cobrancaId\": {{cobrancaId}},\n  \"metodo\": \"PIX\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_pagamentos}}/api/v1/pagamentos",
+              "host": ["{{baseUrl_pagamentos}}"],
+              "path": ["api","v1","pagamentos"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Extrai id do pagamento e transactionId (provider) e salva em variáveis de coleção",
+                  "try {",
+                  "  var json = pm.response.json();",
+                  "  if (json) {",
+                  "    if (json.id) pm.collectionVariables.set('pagamentoId', json.id);",
+                  "    if (json.transactionId) pm.collectionVariables.set('transactionId', json.transactionId);",
+                  "    console.log('pagamentoId e transactionId atualizados:', json.id, json.transactionId);",
+                  "  } else {",
+                  "    console.warn('Resposta vazia ao criar pagamento');",
+                  "  }",
+                  "} catch (e) { console.warn('Não foi possível parsear resposta JSON: ', e); }"
+                ]
+              }
+            }
+          ],
+          "description": "Cria um pagamento baseado em uma cobrança existente. O serviço consulta o transaction-service para validar `escolaId` e retorna um objeto Pagamento com `transactionId` gerado pelo provider (MOCK por padrão). Este request salva {{pagamentoId}} e {{transactionId}} automaticamente a partir da resposta.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/pagamentos/{id}",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" } ],
+            "url": {
+              "raw": "{{baseUrl_pagamentos}}/api/v1/pagamentos/{{pagamentoId}}",
+              "host": ["{{baseUrl_pagamentos}}"],
+              "path": ["api","v1","pagamentos","{{pagamentoId}}"]
+            }
+          },
+          "description": "Consulta um pagamento pelo ID interno. Útil para acompanhar status antes/depois do webhook.",
+          "response": []
+        },
+        {
+          "name": "GET /api/v1/pagamentos/status/{transactionId}",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{JWT_TOKEN}}" } ],
+            "url": {
+              "raw": "{{baseUrl_pagamentos}}/api/v1/pagamentos/status/{{transactionId}}",
+              "host": ["{{baseUrl_pagamentos}}"],
+              "path": ["api","v1","pagamentos","status","{{transactionId}}"]
+            }
+          },
+          "description": "Consulta o status do pagamento no provider pelo transactionId. Útil para validar antes de processar confirmação.",
+          "response": []
+        },
+        {
+          "name": "POST /api/v1/pagamentos/webhook/mock - simular webhook",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"status\": \"PAID\",\n  \"metadata\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl_pagamentos}}/api/v1/pagamentos/webhook/mock",
+              "host": ["{{baseUrl_pagamentos}}"],
+              "path": ["api","v1","pagamentos","webhook","mock"]
+            }
+          },
+          "description": "Endpoint público que simula a notificação de um provider externo. Após receber webhook, o serviço valida idempotência e, se confirmado, faz PATCH para `transaction-service` para marcar a cobrança como `PAGO`.",
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl_login", "value": "http://localhost:8081/api/v1" },
+    { "key": "baseUrl_alunos", "value": "http://localhost:8080" },
+    { "key": "baseUrl_financeiro", "value": "http://localhost:8080" },
+    { "key": "baseUrl_pagamentos", "value": "http://localhost:8083" },
+    { "key": "JWT_TOKEN", "value": "" },
+    { "key": "JWT_ADMIN", "value": "" },
+    { "key": "alunoId", "value": "1" },
+    { "key": "cobrancaId", "value": "1" },
+    { "key": "pagamentoId", "value": "1" },
+    { "key": "transactionId", "value": "MOCK-TRANSACTION-1" }
+  ]
+}
